@@ -41,15 +41,28 @@ test("isEgoErrorCode narrows to known codes only", () => {
   assert.equal(isEgoErrorCode(undefined), false);
 });
 
-test("resolveEgoError prefers the live browser text", () => {
+test("resolveEgoError overrides live text with the owned wording for a known code", () => {
   const resolved = resolveEgoError({
     error: "Task space not found: 7",
     error_code: "EGO_TASK_SPACE_NOT_FOUND",
   });
   assert.deepEqual(resolved, {
     code: "EGO_TASK_SPACE_NOT_FOUND",
-    message: "Task space not found: 7",
+    message: "Task space not found.",
   });
+});
+
+test("resolveEgoError keeps live text for an unknown future code", () => {
+  assert.deepEqual(
+    resolveEgoError({
+      error: "Some build-specific detail",
+      error_code: "EGO_FUTURE_CODE",
+    }),
+    {
+      code: "EGO_FUTURE_CODE",
+      message: "Some build-specific detail",
+    },
+  );
 });
 
 test("resolveEgoError falls back to the ego-browser message for a bare code", () => {
@@ -90,7 +103,7 @@ test("isEgoUserControlError keys on the stable code, not wording", () => {
   );
 });
 
-test("assertNoEgoError preserves the message and attaches error_code", () => {
+test("assertNoEgoError resolves the message via the code and attaches error_code", () => {
   try {
     assertNoEgoError(
       {
@@ -101,8 +114,21 @@ test("assertNoEgoError preserves the message and attaches error_code", () => {
     );
     assert.fail("expected assertNoEgoError to throw");
   } catch (err) {
-    assert.equal(err.message, "listTabs: The task is under user control");
+    assert.equal(err.message, "listTabs: The task is under user control.");
     assert.equal(err.error_code, "EGO_TASK_SPACE_USER_IN_CONTROL");
+  }
+});
+
+test("assertNoEgoError omits the prefix when no op is given", () => {
+  try {
+    assertNoEgoError({
+      error: "The task space is inactive: 10",
+      error_code: "EGO_TASK_SPACE_INACTIVE",
+    });
+    assert.fail("expected assertNoEgoError to throw");
+  } catch (err) {
+    assert.equal(err.message, "The task space is inactive.");
+    assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
   }
 });
 

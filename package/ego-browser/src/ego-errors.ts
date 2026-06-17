@@ -8,9 +8,9 @@
  *
  * The code is the durable contract; the wording can drift between builds. Branch
  * on the code (isEgoUserControlError), not on the message. EGO_ERROR_MESSAGES is
- * the seam where ego-browser owns its own wording per code — today it only
- * supplies a fallback when the browser sent no text, but it is the place to
- * customize how each failure reads going forward.
+ * where ego-browser owns its own wording per code: for any code this build knows,
+ * its wording is authoritative and overrides the browser's live text. Unknown
+ * (future) codes fall back to the live text.
  *
  * Single source of truth — error handling was previously duplicated across
  * helpers.ts and driver/nav.ts.
@@ -38,8 +38,9 @@ export const EGO_ERROR_CODES = [
 export type EgoErrorCode = (typeof EGO_ERROR_CODES)[number];
 
 /**
- * ego-browser-owned message for each stable code. Used only as a fallback when
- * the browser side supplied no human-readable text; customize wording here.
+ * ego-browser-owned message for each stable code. For codes this build knows,
+ * this wording is authoritative and overrides the browser's live text; customize
+ * wording here. Keep it free of dynamic values (no ids).
  */
 const EGO_ERROR_MESSAGES: Record<EgoErrorCode, string> = {
   EGO_BROWSER_UNAVAILABLE: "No active browser.",
@@ -87,9 +88,10 @@ export function egoErrorCode(err: unknown): string | undefined {
 /**
  * Resolve any ego error into a stable `{ code, message }` pair.
  *
- * `message` prefers the live human-readable text the browser supplied, then the
- * ego-browser-owned message for the code, then the bare code, then a generic
- * string. `code` is the stable classifier and may be undefined.
+ * For a code this build knows, `message` is the ego-browser-owned wording for
+ * that code. Otherwise it falls back to the live human-readable text the browser
+ * supplied, then the bare code, then a generic string. `code` is the stable
+ * classifier and may be undefined.
  */
 export function resolveEgoError(err: unknown): {
   code?: string;
@@ -97,8 +99,8 @@ export function resolveEgoError(err: unknown): {
 } {
   const code = egoErrorCode(err);
   const message =
-    liveErrorText(err) ??
     (isEgoErrorCode(code) ? EGO_ERROR_MESSAGES[code] : undefined) ??
+    liveErrorText(err) ??
     code ??
     "Unknown ego error";
   return { code, message };
@@ -109,7 +111,7 @@ export function isEgoUserControlError(err: unknown): boolean {
   return egoErrorCode(err) === "EGO_TASK_SPACE_USER_IN_CONTROL";
 }
 
-export function assertNoEgoError(result, op: string) {
+export function assertNoEgoError(result, op?: string) {
   if (
     result &&
     typeof result === "object" &&
@@ -118,7 +120,7 @@ export function assertNoEgoError(result, op: string) {
   ) {
     const { code, message } = resolveEgoError(result);
     const error: Error & { error_code?: string } = new Error(
-      `${op}: ${message}`,
+      op ? `${op}: ${message}` : message,
     );
     if (code) error.error_code = code;
     throw error;

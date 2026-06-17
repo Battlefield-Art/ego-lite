@@ -1,4 +1,5 @@
 import { state } from "./state.js";
+import { assertNoEgoError, resolveEgoError } from "./ego-errors.js";
 
 const RESPONSE_TIMEOUT_MS = 15000;
 const SESSION_TTL_MS = 2000;
@@ -35,6 +36,7 @@ function rawCdp(
 ) {
   const runtime = browserEgo();
   runtime.onCDPMessage = handleMessage;
+  runtime.onSendCDPMessageError = handleSendError;
   const id = nextMessageId++;
   const payload = JSON.stringify({
     id,
@@ -104,10 +106,7 @@ export async function ensureSession() {
   }
   state.sessionInflight = (async () => {
     try {
-      const result = await browserEgo().listTabs();
-      if (result?.error) {
-        throw new Error(result.error);
-      }
+      const result = assertNoEgoError(await browserEgo().listTabs());
       const tabs = result?.tabs || result?.targetInfos || [];
       const preferred = state.preferredTargetId
         ? tabs.find((t) => t.targetId === state.preferredTargetId)
@@ -178,6 +177,25 @@ async function enablePageEvents(sessionId) {
     // Dialog tracking is best-effort. Do not make all helpers fail on targets
     // that reject Page.enable, such as unusual internal pages.
   }
+}
+
+// Local send failures for ego.sendCDPMessage() arrive here (task inactive,
+// user-controlled, not selected/claimed, host gone) instead of as a CDP
+// response, so the matching request would otherwise sit until the 15s timeout.
+// The callback carries no request id; these failures are task-level (every
+// in-flight send fails the same way), so reject all pending requests, routing
+// the stable code through resolveEgoError to use the ego-browser-owned wording.
+function handleSendError(message, error_code) {
+  if (pending.size === 0) return;
+  const { code, message: resolved } = resolveEgoError({
+    error: message,
+    error_code,
+  });
+  const error: Error & { error_code?: string } = new Error(resolved);
+  if (code) error.error_code = code;
+  const entries = [...pending.values()];
+  pending.clear();
+  for (const entry of entries) entry.reject(error);
 }
 
 function handleMessage(message) {
