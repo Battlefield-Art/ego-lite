@@ -1,5 +1,5 @@
 import { state } from "./state.js";
-import { assertNoEgoError, resolveEgoError } from "./ego-errors.js";
+import { assertNoEgoError, buildEgoError } from "./ego-errors.js";
 
 const RESPONSE_TIMEOUT_MS = 15000;
 const SESSION_TTL_MS = 2000;
@@ -184,15 +184,10 @@ async function enablePageEvents(sessionId) {
 // response, so the matching request would otherwise sit until the 15s timeout.
 // The callback carries no request id; these failures are task-level (every
 // in-flight send fails the same way), so reject all pending requests, routing
-// the stable code through resolveEgoError to use the ego-browser-owned wording.
+// the stable code through buildEgoError to use the ego-browser-owned wording.
 function handleSendError(message, error_code) {
   if (pending.size === 0) return;
-  const { code, message: resolved } = resolveEgoError({
-    error: message,
-    error_code,
-  });
-  const error: Error & { error_code?: string } = new Error(resolved);
-  if (code) error.error_code = code;
+  const error = buildEgoError({ error: message, error_code });
   const entries = [...pending.values()];
   pending.clear();
   for (const entry of entries) entry.reject(error);

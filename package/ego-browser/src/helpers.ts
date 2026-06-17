@@ -153,8 +153,8 @@ export async function newTaskSpace(name) {
 
 /**
  * Use an existing agent-owned task space, or create it when missing. User-owned
- * spaces are selected but not claimed (the native bridge surfaces its live
- * user-control error) — call claimTaskSpace(nameOrId) to take ownership.
+ * spaces are selected but not claimed (the EGO_TASK_SPACE_USER_IN_CONTROL error
+ * surfaces) — call claimTaskSpace(nameOrId) to take ownership.
  * @param {string|number} nameOrId Task space name or numeric id.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
  */
@@ -171,9 +171,10 @@ export async function useOrCreateTaskSpace(nameOrId) {
     return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
   if (existing.ownership === "user") {
-    // Don't claim user-owned spaces here. Select it and let the native bridge
-    // surface its live user-control error verbatim; use claimTaskSpace(nameOrId)
-    // to take ownership.
+    // Don't claim user-owned spaces here. Select it as-is; the user stays in
+    // control, so EGO_TASK_SPACE_USER_IN_CONTROL surfaces (as ego-browser's owned
+    // guidance, not the raw native text). Call claimTaskSpace(nameOrId) to take
+    // ownership.
     return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
   throw new Error(

@@ -319,7 +319,7 @@ test("useOrCreateTaskSpace reuses existing agent-owned spaces", async () => {
   assert.deepEqual(calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
 });
 
-test("useOrCreateTaskSpace selects user-owned spaces without claiming and surfaces the live native error", async () => {
+test("useOrCreateTaskSpace selects user-owned spaces without claiming and surfaces the owned user-control guidance", async () => {
   const calls = [];
   await withEgo(
     {
@@ -342,13 +342,18 @@ test("useOrCreateTaskSpace selects user-owned spaces without claiming and surfac
       },
       useTaskSpace(taskId) {
         calls.push(["useTaskSpace", taskId]);
-        return { error: "The task is under user control" };
+        // Native attaches the stable code; resolveEgoError overrides the live
+        // text with ego-browser's owned EGO_TASK_SPACE_USER_IN_CONTROL guidance.
+        return {
+          error: "The task is under user control",
+          error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+        };
       },
     },
     async () => {
       await assert.rejects(
         () => useOrCreateTaskSpace("checkout-flow"),
-        /useOrCreateTaskSpace: The task is under user control/,
+        /useOrCreateTaskSpace: The user is controlling this task space/,
       );
     },
   );

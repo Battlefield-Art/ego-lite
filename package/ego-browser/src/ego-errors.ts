@@ -107,6 +107,25 @@ export function isEgoUserControlError(err: unknown): boolean {
   return egoErrorCode(err) === "EGO_TASK_SPACE_USER_IN_CONTROL";
 }
 
+/**
+ * Build an Error carrying the resolved message and stable error_code from any ego
+ * error shape. `op`, when given, prefixes the message with the failing operation.
+ * Shared by assertNoEgoError (which throws it) and the CDP-send failure path (which
+ * rejects pending requests with it) so every ego failure surfaces an identical
+ * Error shape.
+ */
+export function buildEgoError(
+  err: unknown,
+  op?: string,
+): Error & { error_code?: string } {
+  const { code, message } = resolveEgoError(err);
+  const error: Error & { error_code?: string } = new Error(
+    op ? `${op}: ${message}` : message,
+  );
+  if (code) error.error_code = code;
+  return error;
+}
+
 export function assertNoEgoError(result, op?: string) {
   if (
     result &&
@@ -114,12 +133,7 @@ export function assertNoEgoError(result, op?: string) {
     "error" in result &&
     result.error != null
   ) {
-    const { code, message } = resolveEgoError(result);
-    const error: Error & { error_code?: string } = new Error(
-      op ? `${op}: ${message}` : message,
-    );
-    if (code) error.error_code = code;
-    throw error;
+    throw buildEgoError(result, op);
   }
   return result;
 }

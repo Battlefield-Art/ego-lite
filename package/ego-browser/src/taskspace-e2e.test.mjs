@@ -29,7 +29,10 @@ class FakeEgo {
     this.calls.push(["useTaskSpace", id]);
     const space = this.taskSpaces.find((candidate) => candidate.id === id);
     if (space && space.ownership === "user") {
-      return { error: "The task is under user control" };
+      return {
+        error: "The task is under user control",
+        error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+      };
     }
     this.selectedId = id;
     return id;
@@ -211,7 +214,7 @@ test("taskspace e2e claims and selects an existing user-owned task space", async
   ]);
 });
 
-test("taskspace e2e useOrCreateTaskSpace selects user-owned spaces without claiming and surfaces the live native error", async () => {
+test("taskspace e2e useOrCreateTaskSpace selects user-owned spaces without claiming and surfaces the owned user-control guidance", async () => {
   const ego = new FakeEgo([
     {
       taskId: "checkout-flow",
@@ -222,10 +225,12 @@ test("taskspace e2e useOrCreateTaskSpace selects user-owned spaces without claim
     },
   ]);
 
+  // Native rejects with error_code EGO_TASK_SPACE_USER_IN_CONTROL, so the agent
+  // sees ego-browser's owned guidance block, not the raw native text.
   await assert.rejects(
     () =>
       runTaskspaceScript(ego, `await useOrCreateTaskSpace("checkout-flow")`),
-    /The task is under user control/,
+    /controlling this task space/,
   );
   assert.deepEqual(ego.calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
 });
