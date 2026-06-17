@@ -11,8 +11,8 @@ test("browserCdp surfaces the owned message and error_code when ensureSession is
   globalThis.ego = {
     async listTabs() {
       return {
-        error: "The task is under user control: 7",
-        error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+        error: "Task space 10 is not assigned to an agent.",
+        error_code: "EGO_TASK_SPACE_INACTIVE",
       };
     },
   };
@@ -20,8 +20,11 @@ test("browserCdp surfaces the owned message and error_code when ensureSession is
     await assert.rejects(
       () => browserCdp("Runtime.evaluate", {}, undefined, 1000),
       (err) => {
-        assert.equal(err.error_code, "EGO_TASK_SPACE_USER_IN_CONTROL");
-        assert.equal(err.message, "The task is under user control.");
+        assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
+        assert.equal(
+          err.message,
+          "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
+        );
         return true;
       },
     );
@@ -41,7 +44,7 @@ test("browserCdp rejects the in-flight request via onSendCDPMessageError", async
       queueMicrotask(() =>
         globalThis.ego.onSendCDPMessageError(
           "native reconstructed text",
-          "EGO_TASK_SPACE_USER_IN_CONTROL",
+          "EGO_TASK_SPACE_INACTIVE",
         ),
       );
     },
@@ -51,8 +54,11 @@ test("browserCdp rejects the in-flight request via onSendCDPMessageError", async
       // Browser-level method skips ensureSession; short timeout bounds a regression.
       () => browserCdp("Browser.getVersion", {}, undefined, 1000),
       (err) => {
-        assert.equal(err.error_code, "EGO_TASK_SPACE_USER_IN_CONTROL");
-        assert.equal(err.message, "The task is under user control.");
+        assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
+        assert.equal(
+          err.message,
+          "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
+        );
         return true;
       },
     );

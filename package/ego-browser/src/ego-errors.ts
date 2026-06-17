@@ -8,9 +8,8 @@
  *
  * The code is the durable contract; the wording can drift between builds. Branch
  * on the code (isEgoUserControlError), not on the message. EGO_ERROR_MESSAGES is
- * where ego-browser owns its own wording per code: for any code this build knows,
- * its wording is authoritative and overrides the browser's live text. Unknown
- * (future) codes fall back to the live text.
+ * where ego-browser owns its wording for the few codes an agent must act on; every
+ * other code (and any unknown future code) defers to the browser's live text.
  *
  * Single source of truth — error handling was previously duplicated across
  * helpers.ts and driver/nav.ts.
@@ -38,26 +37,23 @@ export const EGO_ERROR_CODES = [
 export type EgoErrorCode = (typeof EGO_ERROR_CODES)[number];
 
 /**
- * ego-browser-owned message for each stable code. For codes this build knows,
- * this wording is authoritative and overrides the browser's live text; customize
- * wording here. Keep it free of dynamic values (no ids).
+ * Codes whose wording ego-browser owns. A listed code returns this static, id-less
+ * message instead of the browser's live text — reserved for the two business signals
+ * an agent must react to, not just report. Every other code is absent here and
+ * defers to the live message (and any unknown future code does too), which is more
+ * specific than any static line.
  */
-const EGO_ERROR_MESSAGES: Record<EgoErrorCode, string> = {
-  EGO_BROWSER_UNAVAILABLE: "No active browser.",
-  EGO_CDP_CHANNEL_UNAVAILABLE: "The CDP channel is not connected.",
-  EGO_CDP_SEND_FAILED: "Failed to send the CDP message.",
-  EGO_INVALID_ARGUMENT: "Invalid argument.",
-  EGO_INVALID_RESULT_PAYLOAD: "The browser returned an invalid result payload.",
-  EGO_OPERATION_FAILED: "The browser operation failed.",
-  EGO_RESULT_CONVERSION_FAILED: "Failed to convert the browser result.",
-  EGO_SNAPSHOT_FAILED: "Failed to capture the page snapshot.",
-  EGO_TASK_HOST_DISCONNECTED: "The task host is no longer available.",
-  EGO_TASK_SPACE_INACTIVE: "The task space is inactive.",
-  EGO_TASK_SPACE_NOT_FOUND: "Task space not found.",
-  EGO_TASK_SPACE_NOT_SELECTED: "Task space not selected.",
-  EGO_TASK_SPACE_UNAVAILABLE: "The task space is unavailable.",
-  EGO_TASK_SPACE_USER_IN_CONTROL: "The task is under user control.",
-  EGO_WEB_CONTENTS_UNAVAILABLE: "The page contents are unavailable.",
+const EGO_ERROR_MESSAGES: Partial<Record<EgoErrorCode, string>> = {
+  EGO_TASK_SPACE_INACTIVE:
+    "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
+  EGO_TASK_SPACE_USER_IN_CONTROL: [
+    "The user is controlling this task space. Browser commands are paused.",
+    "Do not take over automatically. Wait for the user to return control or ask you to continue.",
+    "To resume after user confirmation, call:",
+    "  await takeOverTaskSpace()",
+    "",
+    `If supported, offer choices like "Continue" or "Finish task"; otherwise tell the user: "You are now controlling this task space. Reply 'continue' when ready, and I will resume."`,
+  ].join("\n"),
 };
 
 /** Type guard for codes this build knows about. */
@@ -88,10 +84,10 @@ export function egoErrorCode(err: unknown): string | undefined {
 /**
  * Resolve any ego error into a stable `{ code, message }` pair.
  *
- * For a code this build knows, `message` is the ego-browser-owned wording for
- * that code. Otherwise it falls back to the live human-readable text the browser
- * supplied, then the bare code, then a generic string. `code` is the stable
- * classifier and may be undefined.
+ * For a code ego-browser owns wording for, `message` is that owned wording.
+ * Otherwise (a code not owned here, or an unknown future code) it falls back to
+ * the live human-readable text the browser supplied, then the bare code, then a
+ * generic string. `code` is the stable classifier and may be undefined.
  */
 export function resolveEgoError(err: unknown): {
   code?: string;
