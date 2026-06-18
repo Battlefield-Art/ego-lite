@@ -41,22 +41,60 @@ test("isEgoErrorCode narrows to known codes only", () => {
   assert.equal(isEgoErrorCode(undefined), false);
 });
 
-test("resolveEgoError prefers the live browser text", () => {
+test("resolveEgoError overrides live text with the owned wording for an owned code", () => {
   const resolved = resolveEgoError({
-    error: "Task space not found: 7",
-    error_code: "EGO_TASK_SPACE_NOT_FOUND",
+    error: "Task space 7 is not assigned to an agent.",
+    error_code: "EGO_TASK_SPACE_INACTIVE",
   });
   assert.deepEqual(resolved, {
-    code: "EGO_TASK_SPACE_NOT_FOUND",
-    message: "Task space not found: 7",
+    code: "EGO_TASK_SPACE_INACTIVE",
+    message:
+      "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
   });
 });
 
-test("resolveEgoError falls back to the ego-browser message for a bare code", () => {
-  assert.deepEqual(resolveEgoError("EGO_TASK_SPACE_USER_IN_CONTROL"), {
-    code: "EGO_TASK_SPACE_USER_IN_CONTROL",
-    message: "The task is under user control.",
+test("resolveEgoError keeps live text for an unknown future code", () => {
+  assert.deepEqual(
+    resolveEgoError({
+      error: "Some build-specific detail",
+      error_code: "EGO_FUTURE_CODE",
+    }),
+    {
+      code: "EGO_FUTURE_CODE",
+      message: "Some build-specific detail",
+    },
+  );
+});
+
+test("resolveEgoError defers to live text for a code ego-browser does not own", () => {
+  // EGO_OPERATION_FAILED is not owned: the client wording (e.g. which operation
+  // failed) is more specific than any static line.
+  assert.deepEqual(
+    resolveEgoError({
+      error: "Failed to create task space",
+      error_code: "EGO_OPERATION_FAILED",
+    }),
+    {
+      code: "EGO_OPERATION_FAILED",
+      message: "Failed to create task space",
+    },
+  );
+});
+
+test("resolveEgoError falls back to the raw code for a bare non-owned code", () => {
+  // ego-browser does not own NOT_SELECTED and a bare code carries no live text,
+  // so the stable code itself is the most specific thing to surface.
+  assert.deepEqual(resolveEgoError("EGO_TASK_SPACE_NOT_SELECTED"), {
+    code: "EGO_TASK_SPACE_NOT_SELECTED",
+    message: "EGO_TASK_SPACE_NOT_SELECTED",
   });
+});
+
+test("resolveEgoError uses the id-less guidance block for a bare user-control code", () => {
+  const { code, message } = resolveEgoError("EGO_TASK_SPACE_USER_IN_CONTROL");
+  assert.equal(code, "EGO_TASK_SPACE_USER_IN_CONTROL");
+  assert.match(message, /controlling this task space/);
+  assert.doesNotMatch(message, /<id>/);
 });
 
 test("resolveEgoError falls back to the raw code, then a generic message", () => {
@@ -90,19 +128,35 @@ test("isEgoUserControlError keys on the stable code, not wording", () => {
   );
 });
 
-test("assertNoEgoError preserves the message and attaches error_code", () => {
+test("assertNoEgoError resolves the message via the code and attaches error_code", () => {
   try {
     assertNoEgoError(
       {
-        error: "The task is under user control",
-        error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+        error: "Task space not selected",
+        error_code: "EGO_TASK_SPACE_NOT_SELECTED",
       },
       "listTabs",
     );
     assert.fail("expected assertNoEgoError to throw");
   } catch (err) {
-    assert.equal(err.message, "listTabs: The task is under user control");
-    assert.equal(err.error_code, "EGO_TASK_SPACE_USER_IN_CONTROL");
+    assert.equal(err.message, "listTabs: Task space not selected");
+    assert.equal(err.error_code, "EGO_TASK_SPACE_NOT_SELECTED");
+  }
+});
+
+test("assertNoEgoError omits the prefix when no op is given", () => {
+  try {
+    assertNoEgoError({
+      error: "The task space is inactive: 10",
+      error_code: "EGO_TASK_SPACE_INACTIVE",
+    });
+    assert.fail("expected assertNoEgoError to throw");
+  } catch (err) {
+    assert.equal(
+      err.message,
+      "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
+    );
+    assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
   }
 });
 

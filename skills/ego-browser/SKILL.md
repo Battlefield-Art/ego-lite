@@ -30,7 +30,7 @@ The heredoc body runs as a Node.js script that controls the selected ego-browser
 
 ## Common helpers
 
-- Task spaces: `listTaskSpaces`, `useOrCreateTaskSpace`, `handOffTaskSpace`, `takeOverTaskSpace`, `waitForAgentControl`, `completeTaskSpace`
+- Task spaces: `listTaskSpaces`, `useOrCreateTaskSpace`, `claimTaskSpace`, `handOffTaskSpace`, `takeOverTaskSpace`, `waitForAgentControl`, `completeTaskSpace`
 - Navigation / state: `listTabs`, `openOrReuseTab`, `closeTab`, `gotoAndWait`, `currentTab`, `switchTab`, `gotoUrl`, `pageInfo`, `ensureRealTab`
 - Observation: `snapshotText`, `captureScreenshot`, `drainEvents`
 - Scroll / mouse: `scrollBy`, `scrollToBottomUntil`, `scroll`, `click`, `doubleClick`, `hover`, `dragMouse`
@@ -63,14 +63,14 @@ A task often takes multiple heredoc rounds to complete. Because the Node.js runt
 
 Use a short name for the active user goal when creating a new task space. Keep reusing that task space for follow-up questions, corrections, refinements, re-checks, and result validation, even if you previously thought the task was complete. Choose a new task space only when the user clearly starts a separate, unrelated goal. Prefer using the numeric `id` returned by `useOrCreateTaskSpace` (for example, `task.id`) to resume a known task in later rounds and avoid name collisions.
 
-To continue work from an existing user-owned task space, use `await listTaskSpaces()` to find the space, call `await useOrCreateTaskSpace(id)` to claim it, then use `await listTabs()` and `await switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `await takeOverTaskSpace(nameOrId)`.
+To continue work from an existing user-owned task space, use `await listTaskSpaces()` to find the space, call `await claimTaskSpace(id)` to take ownership and select it, then use `await listTabs()` and `await switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `await takeOverTaskSpace(nameOrId)`.
 
 **Ownership policy** — every task space has `ownership: 'agent' | 'agentDelegatedToUser' | 'user'`; the helpers treat user-owned spaces differently:
 
 | Helper | When the target space is user-owned |
 |---|---|
 | `switchTaskSpace` | throws — agent-owned spaces only |
-| `useOrCreateTaskSpace` | claims it (ownership transfers to the agent) |
+| `claimTaskSpace` | claims it (ownership transfers to the agent), then selects it |
 | `handOffTaskSpace` | skipped — resolves `{ done: false, skipped: 'user-owned' }` |
 | `completeTaskSpace(…, { keep: true })` | skipped — resolves `{ done: false, skipped: 'user-owned' }` |
 | `completeTaskSpace(…, { keep: false })` | claims it, then closes it |
