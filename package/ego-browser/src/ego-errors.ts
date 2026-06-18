@@ -44,15 +44,21 @@ export type EgoErrorCode = (typeof EGO_ERROR_CODES)[number];
  * specific than any static line.
  */
 const EGO_ERROR_MESSAGES: Partial<Record<EgoErrorCode, string>> = {
-  EGO_TASK_SPACE_INACTIVE:
-    "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
+  EGO_TASK_SPACE_INACTIVE: [
+    "The user has taken control of this task space and ended the task, so it is no longer assigned to the agent and browser commands are paused.",
+    "This is a hard stop, not an obstacle to route around — do not retry and do not take ownership back on your own.",
+    "Wait until the user explicitly asks you to continue, then claim the space and resume:",
+    "  await claimTaskSpace(id)",
+    "",
+    `Offer the user choices like "Continue" or "Finish task" if your harness supports it; otherwise tell them: "You now control this task space. Reply 'continue' when ready and I will resume."`,
+  ].join("\n"),
   EGO_TASK_SPACE_USER_IN_CONTROL: [
-    "The user is controlling this task space. Browser commands are paused.",
-    "Do not take over automatically. Wait for the user to return control or ask you to continue.",
-    "To resume after user confirmation, call:",
+    "The user has taken control of this task space, so browser commands are paused.",
+    "This is a hard stop, not an obstacle to route around — do not retry and do not take control back on your own.",
+    "Wait until the user explicitly asks you to continue, then take control back and resume:",
     "  await takeOverTaskSpace()",
     "",
-    `If supported, offer choices like "Continue" or "Finish task"; otherwise tell the user: "You are now controlling this task space. Reply 'continue' when ready, and I will resume."`,
+    `Offer the user choices like "Continue" or "Finish task" if your harness supports it; otherwise tell them: "You now control this task space. Reply 'continue' when ready and I will resume."`,
   ].join("\n"),
 };
 
