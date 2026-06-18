@@ -41,19 +41,18 @@ test("isEgoErrorCode narrows to known codes only", () => {
   assert.equal(isEgoErrorCode(undefined), false);
 });
 
-test("resolveEgoError overrides live text with the owned wording for an owned code", () => {
-  const resolved = resolveEgoError({
+test("resolveEgoError overrides the native error message with the owned wording for an owned code", () => {
+  const { code, message } = resolveEgoError({
     error: "Task space 7 is not assigned to an agent.",
     error_code: "EGO_TASK_SPACE_INACTIVE",
   });
-  assert.deepEqual(resolved, {
-    code: "EGO_TASK_SPACE_INACTIVE",
-    message:
-      "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
-  });
+  assert.equal(code, "EGO_TASK_SPACE_INACTIVE");
+  // Owned id-less guidance replaces the native "Task space 7 ..." text.
+  assert.match(message, /claimTaskSpace\(id\)/);
+  assert.doesNotMatch(message, /\b7\b/);
 });
 
-test("resolveEgoError keeps live text for an unknown future code", () => {
+test("resolveEgoError keeps the native error message for an unknown future code", () => {
   assert.deepEqual(
     resolveEgoError({
       error: "Some build-specific detail",
@@ -66,7 +65,7 @@ test("resolveEgoError keeps live text for an unknown future code", () => {
   );
 });
 
-test("resolveEgoError defers to live text for a code ego-browser does not own", () => {
+test("resolveEgoError defers to the native error message for a code ego-browser does not own", () => {
   // EGO_OPERATION_FAILED is not owned: the client wording (e.g. which operation
   // failed) is more specific than any static line.
   assert.deepEqual(
@@ -82,7 +81,7 @@ test("resolveEgoError defers to live text for a code ego-browser does not own", 
 });
 
 test("resolveEgoError falls back to the raw code for a bare non-owned code", () => {
-  // ego-browser does not own NOT_SELECTED and a bare code carries no live text,
+  // ego-browser does not own NOT_SELECTED and a bare code carries no native error message,
   // so the stable code itself is the most specific thing to surface.
   assert.deepEqual(resolveEgoError("EGO_TASK_SPACE_NOT_SELECTED"), {
     code: "EGO_TASK_SPACE_NOT_SELECTED",
@@ -93,7 +92,8 @@ test("resolveEgoError falls back to the raw code for a bare non-owned code", () 
 test("resolveEgoError uses the id-less guidance block for a bare user-control code", () => {
   const { code, message } = resolveEgoError("EGO_TASK_SPACE_USER_IN_CONTROL");
   assert.equal(code, "EGO_TASK_SPACE_USER_IN_CONTROL");
-  assert.match(message, /controlling this task space/);
+  assert.match(message, /taken control of this task space/);
+  assert.match(message, /takeOverTaskSpace\(\)/);
   assert.doesNotMatch(message, /<id>/);
 });
 
@@ -152,10 +152,10 @@ test("assertNoEgoError omits the prefix when no op is given", () => {
     });
     assert.fail("expected assertNoEgoError to throw");
   } catch (err) {
-    assert.equal(
-      err.message,
-      "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
-    );
+    // No op given, so no "<op>: " prefix — the owned block starts the message.
+    assert.match(err.message, /^The user has taken control/);
+    assert.match(err.message, /claimTaskSpace\(id\)/);
+    assert.doesNotMatch(err.message, /\b10\b/);
     assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
   }
 });

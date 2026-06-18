@@ -5,8 +5,8 @@ import { browserCdp } from "../dist/src/browser-runtime.js";
 
 // Gap A: ensureSession() calls the raw listTabs binding to attach a session.
 // When the task is blocked it returns { error, error_code }; the result must
-// surface the ego-browser-owned wording for the code (not the live text) and
-// carry error_code, instead of throwing bare live text.
+// surface the ego-browser-owned wording for the code (not the native error
+// message) and carry error_code, instead of throwing the bare native error message.
 test("browserCdp surfaces the owned message and error_code when ensureSession is blocked", async () => {
   globalThis.ego = {
     async listTabs() {
@@ -21,10 +21,9 @@ test("browserCdp surfaces the owned message and error_code when ensureSession is
       () => browserCdp("Runtime.evaluate", {}, undefined, 1000),
       (err) => {
         assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
-        assert.equal(
-          err.message,
-          "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
-        );
+        // Owned guidance block, not the native "Task space 10 ..." text.
+        assert.match(err.message, /claimTaskSpace\(id\)/);
+        assert.doesNotMatch(err.message, /\b10\b/);
         return true;
       },
     );
@@ -55,10 +54,9 @@ test("browserCdp rejects the in-flight request via onSendCDPMessageError", async
       () => browserCdp("Browser.getVersion", {}, undefined, 1000),
       (err) => {
         assert.equal(err.error_code, "EGO_TASK_SPACE_INACTIVE");
-        assert.equal(
-          err.message,
-          "Task space is not assigned to an agent. Claim this task space before sending CDP messages.",
-        );
+        // Owned guidance block, not the native reconstructed text.
+        assert.match(err.message, /claimTaskSpace\(id\)/);
+        assert.doesNotMatch(err.message, /native reconstructed text/);
         return true;
       },
     );
