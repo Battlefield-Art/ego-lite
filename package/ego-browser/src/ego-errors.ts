@@ -8,9 +8,8 @@
  *
  * The code is the durable contract; the wording can drift between builds. Branch
  * on the code (isEgoUserControlError), not on the message. EGO_ERROR_MESSAGES is
- * the seam where ego-browser owns its own wording per code — today it only
- * supplies a fallback when the browser sent no text, but it is the place to
- * customize how each failure reads going forward.
+ * where ego-browser owns its wording for the few codes an agent must act on; every
+ * other code (and any unknown future code) defers to the native error message.
  *
  * Single source of truth — error handling was previously duplicated across
  * helpers.ts and driver/nav.ts.
@@ -38,25 +37,29 @@ export const EGO_ERROR_CODES = [
 export type EgoErrorCode = (typeof EGO_ERROR_CODES)[number];
 
 /**
- * ego-browser-owned message for each stable code. Used only as a fallback when
- * the browser side supplied no human-readable text; customize wording here.
+ * Codes whose wording ego-browser owns. A listed code returns this static, id-less
+ * message instead of the native error message — reserved for the two business signals
+ * an agent must react to, not just report. Every other code is absent here and defers
+ * to the native error message (and any unknown future code does too), which is more
+ * specific than any static line.
  */
-const EGO_ERROR_MESSAGES: Record<EgoErrorCode, string> = {
-  EGO_BROWSER_UNAVAILABLE: "No active browser.",
-  EGO_CDP_CHANNEL_UNAVAILABLE: "The CDP channel is not connected.",
-  EGO_CDP_SEND_FAILED: "Failed to send the CDP message.",
-  EGO_INVALID_ARGUMENT: "Invalid argument.",
-  EGO_INVALID_RESULT_PAYLOAD: "The browser returned an invalid result payload.",
-  EGO_OPERATION_FAILED: "The browser operation failed.",
-  EGO_RESULT_CONVERSION_FAILED: "Failed to convert the browser result.",
-  EGO_SNAPSHOT_FAILED: "Failed to capture the page snapshot.",
-  EGO_TASK_HOST_DISCONNECTED: "The task host is no longer available.",
-  EGO_TASK_SPACE_INACTIVE: "The task space is inactive.",
-  EGO_TASK_SPACE_NOT_FOUND: "Task space not found.",
-  EGO_TASK_SPACE_NOT_SELECTED: "Task space not selected.",
-  EGO_TASK_SPACE_UNAVAILABLE: "The task space is unavailable.",
-  EGO_TASK_SPACE_USER_IN_CONTROL: "The task is under user control.",
-  EGO_WEB_CONTENTS_UNAVAILABLE: "The page contents are unavailable.",
+const EGO_ERROR_MESSAGES: Partial<Record<EgoErrorCode, string>> = {
+  EGO_TASK_SPACE_INACTIVE: [
+    "The user has taken control of this task space and ended the task, so it is no longer assigned to the agent and browser commands are paused.",
+    "This is a hard stop, not an obstacle to route around — do not retry and do not take ownership back on your own.",
+    "Wait until the user explicitly asks you to continue, then claim the space and resume:",
+    "  await claimTaskSpace(id)",
+    "",
+    `Offer the user choices like "Continue" or "Finish task" if your harness supports it; otherwise tell them: "You now control this task space. Reply 'continue' when ready and I will resume."`,
+  ].join("\n"),
+  EGO_TASK_SPACE_USER_IN_CONTROL: [
+    "The user has taken control of this task space, so browser commands are paused.",
+    "This is a hard stop, not an obstacle to route around — do not retry and do not take control back on your own.",
+    "Wait until the user explicitly asks you to continue, then take control back and resume:",
+    "  await takeOverTaskSpace()",
+    "",
+    `Offer the user choices like "Continue" or "Finish task" if your harness supports it; otherwise tell them: "You now control this task space. Reply 'continue' when ready and I will resume."`,
+  ].join("\n"),
 };
 
 /** Type guard for codes this build knows about. */
@@ -87,9 +90,10 @@ export function egoErrorCode(err: unknown): string | undefined {
 /**
  * Resolve any ego error into a stable `{ code, message }` pair.
  *
- * `message` prefers the live human-readable text the browser supplied, then the
- * ego-browser-owned message for the code, then the bare code, then a generic
- * string. `code` is the stable classifier and may be undefined.
+ * For a code ego-browser owns wording for, `message` is that owned wording.
+ * Otherwise (a code not owned here, or an unknown future code) it falls back to
+ * the native error message the binding returned, then the bare code, then a
+ * generic string. `code` is the stable classifier and may be undefined.
  */
 export function resolveEgoError(err: unknown): {
   code?: string;
@@ -97,8 +101,8 @@ export function resolveEgoError(err: unknown): {
 } {
   const code = egoErrorCode(err);
   const message =
-    liveErrorText(err) ??
     (isEgoErrorCode(code) ? EGO_ERROR_MESSAGES[code] : undefined) ??
+    nativeErrorText(err) ??
     code ??
     "Unknown ego error";
   return { code, message };
@@ -109,25 +113,42 @@ export function isEgoUserControlError(err: unknown): boolean {
   return egoErrorCode(err) === "EGO_TASK_SPACE_USER_IN_CONTROL";
 }
 
-export function assertNoEgoError(result, op: string) {
+/**
+ * Build an Error carrying the resolved message and stable error_code from any ego
+ * error shape. `op`, when given, prefixes the message with the failing operation.
+ * Shared by assertNoEgoError (which throws it) and the CDP-send failure path (which
+ * rejects pending requests with it) so every ego failure surfaces an identical
+ * Error shape.
+ */
+export function buildEgoError(
+  err: unknown,
+  op?: string,
+): Error & { error_code?: string } {
+  const { code, message } = resolveEgoError(err);
+  const error: Error & { error_code?: string } = new Error(
+    op ? `${op}: ${message}` : message,
+  );
+  if (code) error.error_code = code;
+  return error;
+}
+
+export function assertNoEgoError(result, op?: string) {
   if (
     result &&
     typeof result === "object" &&
     "error" in result &&
     result.error != null
   ) {
-    const { code, message } = resolveEgoError(result);
-    const error: Error & { error_code?: string } = new Error(
-      `${op}: ${message}`,
-    );
-    if (code) error.error_code = code;
-    throw error;
+    throw buildEgoError(result, op);
   }
   return result;
 }
 
-/** Human-readable text from any ego error shape, ignoring bare codes. */
-function liveErrorText(err: unknown): string | undefined {
+/**
+ * The native error message from any ego error shape — the binding's runtime
+ * `error`/`message` text (dynamic, may vary across builds). Ignores bare codes.
+ */
+function nativeErrorText(err: unknown): string | undefined {
   if (typeof err === "string") {
     return isEgoErrorCode(err) ? undefined : err;
   }

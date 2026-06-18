@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import * as helperExports from "../dist/src/helpers.js";
 import {
+  claimTaskSpace,
   completeTaskSpace,
   handOffTaskSpace,
   newTaskSpace,
@@ -92,13 +93,13 @@ test("listTaskSpaces throws on binding error objects", async () => {
   );
 });
 
-test("taskspace helper surface exposes public helpers without claimTaskSpace", () => {
+test("taskspace helper surface exposes public helpers including claimTaskSpace", () => {
   const context = helperContext();
   assert.equal(typeof context.listTaskSpaces, "function");
   assert.equal(typeof context.switchTaskSpace, "function");
   assert.equal(typeof context.newTaskSpace, "function");
   assert.equal(typeof context.useOrCreateTaskSpace, "function");
-  assert.equal(context.claimTaskSpace, undefined);
+  assert.equal(typeof context.claimTaskSpace, "function");
   assert.equal(typeof helperExports.openOrReuseTab, "function");
   assert.equal(typeof context.openOrReuseTab, "function");
   assert.equal(typeof helperExports.closeTab, "function");
@@ -318,7 +319,48 @@ test("useOrCreateTaskSpace reuses existing agent-owned spaces", async () => {
   assert.deepEqual(calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
 });
 
-test("useOrCreateTaskSpace claims existing user-owned spaces", async () => {
+test("useOrCreateTaskSpace selects user-owned spaces without claiming and surfaces the owned user-control guidance", async () => {
+  const calls = [];
+  await withEgo(
+    {
+      async listTaskSpaces() {
+        calls.push(["listTaskSpaces"]);
+        return {
+          taskSpaces: [
+            {
+              taskId: "checkout-flow",
+              id: 7,
+              name: "checkout-flow",
+              ownership: "user",
+            },
+          ],
+        };
+      },
+      async claimTaskSpace(id, name) {
+        calls.push(["claimTaskSpace", id, name]);
+        return { taskId: name, id, name, ownership: "agent" };
+      },
+      useTaskSpace(taskId) {
+        calls.push(["useTaskSpace", taskId]);
+        // Native attaches the stable code; resolveEgoError overrides the live
+        // text with ego-browser's owned EGO_TASK_SPACE_USER_IN_CONTROL guidance.
+        return {
+          error: "The task is under user control",
+          error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+        };
+      },
+    },
+    async () => {
+      await assert.rejects(
+        () => useOrCreateTaskSpace("checkout-flow"),
+        /useOrCreateTaskSpace: The user has taken control of this task space/,
+      );
+    },
+  );
+  assert.deepEqual(calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
+});
+
+test("claimTaskSpace claims and selects an existing user-owned space", async () => {
   const calls = [];
   await withEgo(
     {
@@ -345,7 +387,7 @@ test("useOrCreateTaskSpace claims existing user-owned spaces", async () => {
       },
     },
     async () => {
-      assert.deepEqual(await useOrCreateTaskSpace("checkout-flow"), {
+      assert.deepEqual(await claimTaskSpace("checkout-flow"), {
         taskId: "checkout-flow",
         id: 7,
         name: "checkout-flow",
@@ -358,6 +400,29 @@ test("useOrCreateTaskSpace claims existing user-owned spaces", async () => {
     ["claimTaskSpace", 7, "checkout-flow"],
     ["useTaskSpace", 7],
   ]);
+});
+
+test("claimTaskSpace throws on an unknown task space", async () => {
+  const calls = [];
+  await withEgo(
+    {
+      async listTaskSpaces() {
+        calls.push(["listTaskSpaces"]);
+        return { taskSpaces: [] };
+      },
+      async claimTaskSpace(id, name) {
+        calls.push(["claimTaskSpace", id, name]);
+        return { taskId: name, id, name, ownership: "agent" };
+      },
+    },
+    async () => {
+      await assert.rejects(
+        () => claimTaskSpace("checkout-flow"),
+        /task space not found: checkout-flow/,
+      );
+    },
+  );
+  assert.deepEqual(calls, [["listTaskSpaces"]]);
 });
 
 test("useOrCreateTaskSpace creates missing spaces", async () => {
