@@ -41,7 +41,7 @@ test("isEgoErrorCode narrows to known codes only", () => {
   assert.equal(isEgoErrorCode(undefined), false);
 });
 
-test("resolveEgoError overrides live text with the owned wording for an owned code", () => {
+test("resolveEgoError overrides the native error message with the owned wording for an owned code", () => {
   const resolved = resolveEgoError({
     error: "Task space 7 is not assigned to an agent.",
     error_code: "EGO_TASK_SPACE_INACTIVE",
@@ -53,7 +53,7 @@ test("resolveEgoError overrides live text with the owned wording for an owned co
   });
 });
 
-test("resolveEgoError keeps live text for an unknown future code", () => {
+test("resolveEgoError keeps the native error message for an unknown future code", () => {
   assert.deepEqual(
     resolveEgoError({
       error: "Some build-specific detail",
@@ -66,7 +66,7 @@ test("resolveEgoError keeps live text for an unknown future code", () => {
   );
 });
 
-test("resolveEgoError defers to live text for a code ego-browser does not own", () => {
+test("resolveEgoError defers to the native error message for a code ego-browser does not own", () => {
   // EGO_OPERATION_FAILED is not owned: the client wording (e.g. which operation
   // failed) is more specific than any static line.
   assert.deepEqual(
@@ -82,7 +82,7 @@ test("resolveEgoError defers to live text for a code ego-browser does not own", 
 });
 
 test("resolveEgoError falls back to the raw code for a bare non-owned code", () => {
-  // ego-browser does not own NOT_SELECTED and a bare code carries no live text,
+  // ego-browser does not own NOT_SELECTED and a bare code carries no native error message,
   // so the stable code itself is the most specific thing to surface.
   assert.deepEqual(resolveEgoError("EGO_TASK_SPACE_NOT_SELECTED"), {
     code: "EGO_TASK_SPACE_NOT_SELECTED",

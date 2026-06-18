@@ -5,8 +5,8 @@ import { browserCdp } from "../dist/src/browser-runtime.js";
 
 // Gap A: ensureSession() calls the raw listTabs binding to attach a session.
 // When the task is blocked it returns { error, error_code }; the result must
-// surface the ego-browser-owned wording for the code (not the live text) and
-// carry error_code, instead of throwing bare live text.
+// surface the ego-browser-owned wording for the code (not the native error
+// message) and carry error_code, instead of throwing the bare native error message.
 test("browserCdp surfaces the owned message and error_code when ensureSession is blocked", async () => {
   globalThis.ego = {
     async listTabs() {

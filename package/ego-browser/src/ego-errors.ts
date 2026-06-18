@@ -9,7 +9,7 @@
  * The code is the durable contract; the wording can drift between builds. Branch
  * on the code (isEgoUserControlError), not on the message. EGO_ERROR_MESSAGES is
  * where ego-browser owns its wording for the few codes an agent must act on; every
- * other code (and any unknown future code) defers to the browser's live text.
+ * other code (and any unknown future code) defers to the native error message.
  *
  * Single source of truth — error handling was previously duplicated across
  * helpers.ts and driver/nav.ts.
@@ -38,9 +38,9 @@ export type EgoErrorCode = (typeof EGO_ERROR_CODES)[number];
 
 /**
  * Codes whose wording ego-browser owns. A listed code returns this static, id-less
- * message instead of the browser's live text — reserved for the two business signals
- * an agent must react to, not just report. Every other code is absent here and
- * defers to the live message (and any unknown future code does too), which is more
+ * message instead of the native error message — reserved for the two business signals
+ * an agent must react to, not just report. Every other code is absent here and defers
+ * to the native error message (and any unknown future code does too), which is more
  * specific than any static line.
  */
 const EGO_ERROR_MESSAGES: Partial<Record<EgoErrorCode, string>> = {
@@ -86,7 +86,7 @@ export function egoErrorCode(err: unknown): string | undefined {
  *
  * For a code ego-browser owns wording for, `message` is that owned wording.
  * Otherwise (a code not owned here, or an unknown future code) it falls back to
- * the live human-readable text the browser supplied, then the bare code, then a
+ * the native error message the binding returned, then the bare code, then a
  * generic string. `code` is the stable classifier and may be undefined.
  */
 export function resolveEgoError(err: unknown): {
@@ -96,7 +96,7 @@ export function resolveEgoError(err: unknown): {
   const code = egoErrorCode(err);
   const message =
     (isEgoErrorCode(code) ? EGO_ERROR_MESSAGES[code] : undefined) ??
-    liveErrorText(err) ??
+    nativeErrorText(err) ??
     code ??
     "Unknown ego error";
   return { code, message };
@@ -138,8 +138,11 @@ export function assertNoEgoError(result, op?: string) {
   return result;
 }
 
-/** Human-readable text from any ego error shape, ignoring bare codes. */
-function liveErrorText(err: unknown): string | undefined {
+/**
+ * The native error message from any ego error shape — the binding's runtime
+ * `error`/`message` text (dynamic, may vary across builds). Ignores bare codes.
+ */
+function nativeErrorText(err: unknown): string | undefined {
   if (typeof err === "string") {
     return isEgoErrorCode(err) ? undefined : err;
   }
