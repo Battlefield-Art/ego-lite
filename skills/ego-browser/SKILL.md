@@ -63,6 +63,8 @@ A task often takes multiple heredoc rounds to complete. Because the Node.js runt
 
 Use a short name for the active user goal when creating a new task space. Keep reusing that task space for follow-up questions, corrections, refinements, re-checks, and result validation, even if you previously thought the task was complete. Choose a new task space only when the user clearly starts a separate, unrelated goal. Prefer using the numeric `id` returned by `useOrCreateTaskSpace` (for example, `task.id`) to resume a known task in later rounds and avoid name collisions.
 
+For any follow-up on the same user goal — including continue, corrections, retries, validation, user-reported problems, or work after `completeTaskSpace(..., { keep: true })` — resume the original task space first if it still exists. Do not create a new task space for the same goal unless the user asks for a fresh space, starts an unrelated goal, or the original space is unavailable after checking. If a new space is necessary, state why.
+
 To continue work from an existing user-owned task space, use `await listTaskSpaces()` to find the space, call `await claimTaskSpace(id)` to take ownership and select it, then use `await listTabs()` and `await switchTab(targetId)` to select the exact tab before acting. This is different from resuming a handoff from your own prior task space, which starts with `await takeOverTaskSpace(nameOrId)`.
 
 **Ownership policy** — every task space has `ownership: 'agent' | 'agentDelegatedToUser' | 'user'`; the helpers treat user-owned spaces differently:
@@ -78,7 +80,9 @@ To continue work from an existing user-owned task space, use `await listTaskSpac
 
 `handOffTaskSpace` and `completeTaskSpace` resolve `{ done: true }` when the operation actually happened. Check `done` before telling the user the handoff/cleanup is finished — a `skipped` result usually means you targeted a space that was never yours.
 
-**`completeTaskSpace(nameOrId, { keep })` must occupy its own dedicated final heredoc, and run only after a prior heredoc's output has confirmed the task is genuinely done.** `keep` is required: pass `false` to close the space, or `true` to complete the space and leave the page visible to the user.
+**`completeTaskSpace(nameOrId, { keep })` must occupy its own dedicated final heredoc, and run only after a prior heredoc's output has confirmed the task is genuinely done.** `keep` is required and defaults by policy to `false`: close the task space after completion unless there is a concrete reason to leave the live page visible.
+
+Use `{ keep: true }` only when the user explicitly asks to keep the page open, the task needs manual user action in that exact page, or the result cannot be delivered well as a URL, file, artifact, or summary. Do not keep a task space open merely because a page was visited, a document was created, or a screenshot was used for verification.
 
 When passing a string that may create a new task space, the string should reflect the task's intent (e.g. `'search github issues'`); don't use literal placeholders.
 
@@ -193,6 +197,6 @@ These workflows can be combined. A task may take multiple heredoc rounds when th
 - If the source passed to `js()` contains a top-level `return`, it will be auto-wrapped in an IIFE; `return` inside nested callbacks can also trigger this accidentally. For complex expressions, prefer the explicit `(() => { ... })()` form.
 - If `await pageInfo()` reports `w: 0` or `h: 0`, do not continue coordinate actions or screenshots until the viewport is fixed. Try switching to the real tab, reloading, or using CDP viewport metrics, then verify with `await pageInfo()` and `await captureScreenshot()`.
 - Code in the heredoc body runs in Node.js; code inside `js(...)` runs in the browser page. Navigation, waits, and `cliLog(...)` belong in the heredoc body; `document`, `window`, and page selectors belong inside `js(...)`.
-- Always call `completeTaskSpace(name, { keep })` when the task is done — do not leave the space hanging. Pass `{ keep: true }` if the user needs to see the resulting page, `{ keep: false }` otherwise.
+- Always call `completeTaskSpace(name, { keep })` when the task is done — do not leave the space hanging. Default to `{ keep: false }`; use `{ keep: true }` only for the concrete live-page cases described in Task spaces.
 - When the user explicitly asks to use ego-browser, assume both `ego-browser` and the repo runtime are ready. Do not pre-check `which ego-browser`, `node -v`, package metadata, or help output. Only investigate environment issues if the first run produces an error.
 - If the first run reports `command not found` / a missing environment (most likely ego lite isn't installed yet), or the user explicitly asks to install ego lite, first read `references/install.md` and follow its flow to complete the install, then return to the original task — do not give up, and do not keep retrying the same heredoc.
