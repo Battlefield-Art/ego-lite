@@ -91,7 +91,7 @@ export async function listTaskSpaces() {
  * does when the target space is user-owned:
  *
  *   switchTaskSpace                     -> throws (agent-owned only)
- *   useOrCreateTaskSpace                -> claims it (ownership transfers to the agent)
+ *   claimTaskSpace                      -> claims it (ownership transfers to the agent), then selects it
  *   handOffTaskSpace                    -> skipped, resolves { done: false, skipped: "user-owned" }
  *   completeTaskSpace { keep: true }    -> skipped, resolves { done: false, skipped: "user-owned" }
  *   completeTaskSpace { keep: false }   -> claims it, then closes it
@@ -152,7 +152,9 @@ export async function newTaskSpace(name) {
 }
 
 /**
- * Use an existing agent-owned task space, claim an existing user-owned space, or create it when missing.
+ * Use an existing agent-owned task space, or create it when missing. User-owned
+ * spaces are selected but not claimed (the EGO_TASK_SPACE_USER_IN_CONTROL error
+ * surfaces) — call claimTaskSpace(nameOrId) to take ownership.
  * @param {string|number} nameOrId Task space name or numeric id.
  * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
  */
@@ -169,14 +171,30 @@ export async function useOrCreateTaskSpace(nameOrId) {
     return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
   if (existing.ownership === "user") {
-    return claimTaskSpace(existing, "useOrCreateTaskSpace");
+    // Don't claim user-owned spaces here. Select it as-is; the user stays in
+    // control, so EGO_TASK_SPACE_USER_IN_CONTROL surfaces (as ego-browser's owned
+    // guidance, not the raw native text). Call claimTaskSpace(nameOrId) to take
+    // ownership.
+    return selectTaskSpace(globalThis.ego, existing, "useOrCreateTaskSpace");
   }
   throw new Error(
     `useOrCreateTaskSpace cannot use task space ${JSON.stringify(nameOrId)} with ownership ${JSON.stringify(existing.ownership)}`,
   );
 }
 
-async function claimTaskSpace(space, op = "claimTaskSpace") {
+/**
+ * Claim a user-owned task space (ownership transfers to the agent) and select it
+ * for the current Node invocation. Resolves the space by id/name, claims it via
+ * ego.claimTaskSpace, then selects it.
+ * @param {string|number} nameOrId Task space id or name.
+ * @returns {Promise<{taskId:string,id:number,name:string,createdBy?:string,ownership?:string,recentTabTitles?:string[]}>}
+ */
+export async function claimTaskSpace(nameOrId) {
+  const space = await findTaskSpace(nameOrId);
+  return claimResolvedTaskSpace(space, "claimTaskSpace");
+}
+
+async function claimResolvedTaskSpace(space, op = "claimTaskSpace") {
   const ego = globalThis.ego;
   if (!ego || typeof ego.claimTaskSpace !== "function") {
     throw new Error(`${op} requires ego.claimTaskSpace`);
@@ -254,7 +272,7 @@ export async function completeTaskSpace(
     assertNoEgoError(await ego.completeTaskSpace(), "completeTaskSpace");
   } else {
     if (match.ownership === "user") {
-      await claimTaskSpace(match, "completeTaskSpace");
+      await claimResolvedTaskSpace(match, "completeTaskSpace");
     } else {
       await selectTaskSpace(ego, match, "completeTaskSpace");
     }
@@ -489,6 +507,7 @@ export function helperContext(extra: any = {}) {
     switchTaskSpace,
     newTaskSpace,
     useOrCreateTaskSpace,
+    claimTaskSpace,
     completeTaskSpace,
     handOffTaskSpace,
     takeOverTaskSpace,

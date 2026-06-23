@@ -27,6 +27,13 @@ class FakeEgo {
       throw new TypeError("useTaskSpace requires numeric id");
     }
     this.calls.push(["useTaskSpace", id]);
+    const space = this.taskSpaces.find((candidate) => candidate.id === id);
+    if (space && space.ownership === "user") {
+      return {
+        error: "The task is under user control",
+        error_code: "EGO_TASK_SPACE_USER_IN_CONTROL",
+      };
+    }
     this.selectedId = id;
     return id;
   }
@@ -184,7 +191,7 @@ test("taskspace e2e claims and selects an existing user-owned task space", async
   const result = await runTaskspaceScript(
     ego,
     `
-    const task = await useOrCreateTaskSpace("checkout-flow");
+    const task = await claimTaskSpace("checkout-flow");
     cliLog(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
@@ -207,7 +214,28 @@ test("taskspace e2e claims and selects an existing user-owned task space", async
   ]);
 });
 
-test("taskspace e2e exposes newTaskSpace but not claimTaskSpace as a helper", async () => {
+test("taskspace e2e useOrCreateTaskSpace selects user-owned spaces without claiming and surfaces the owned user-control guidance", async () => {
+  const ego = new FakeEgo([
+    {
+      taskId: "checkout-flow",
+      id: 7,
+      name: "checkout-flow",
+      createdBy: "user",
+      ownership: "user",
+    },
+  ]);
+
+  // Native rejects with error_code EGO_TASK_SPACE_USER_IN_CONTROL, so the agent
+  // sees ego-browser's owned guidance block, not the raw native text.
+  await assert.rejects(
+    () =>
+      runTaskspaceScript(ego, `await useOrCreateTaskSpace("checkout-flow")`),
+    /has taken control of this task space/,
+  );
+  assert.deepEqual(ego.calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
+});
+
+test("taskspace e2e exposes newTaskSpace and claimTaskSpace as helpers", async () => {
   const ego = new FakeEgo();
   const result = await runTaskspaceScript(
     ego,
@@ -225,7 +253,7 @@ test("taskspace e2e exposes newTaskSpace but not claimTaskSpace as a helper", as
   assert.deepEqual(firstJsonLine(result.stdout), {
     newType: "function",
     switchType: "function",
-    claimType: "undefined",
+    claimType: "function",
     rawClaimType: "function",
   });
 });
