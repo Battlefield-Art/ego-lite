@@ -19,7 +19,6 @@ import {
   ensureRefMapForRef,
   registerSnapshotForRefRefresh,
 } from "../ref-state.js";
-import { assertValidViewport } from "./viewport.js";
 
 type SnapshotOptions = {
   scope?: "only_within_viewport" | "full_page";
@@ -118,14 +117,13 @@ export async function captureScreenshot(
     if (!pendingDialog()) {
       const dpr = Number(await js("window.devicePixelRatio")) || 1;
       const cssScale = 1 / dpr;
-      const info = await pageInfo();
-      if ("dialog" in info) {
-        return captureScreenshot(path, { ...options, raw: true });
-      }
-      assertValidViewport(info, "captureScreenshot");
       if (options.clip) {
         params.clip = { scale: cssScale, ...options.clip };
       } else {
+        const info = await pageInfo();
+        if ("dialog" in info) {
+          return captureScreenshot(path, { ...options, raw: true });
+        }
         params.clip = {
           x: 0,
           y: 0,

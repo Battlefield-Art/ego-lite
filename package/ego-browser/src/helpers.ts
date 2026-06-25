@@ -435,18 +435,13 @@ export async function siteSkillsForUrl(url) {
   });
 }
 
-async function currentPageUrl() {
-  const info = await nav.pageInfo();
-  return "url" in info ? info.url : "";
-}
-
 /**
  * Return site skills matching a URL, or the current page URL when omitted.
  * @param {string} [url] URL to inspect for site skills.
  * @returns {Promise<Array<object|string>>}
  */
 export async function siteSkills(url = undefined) {
-  const targetUrl = url ?? (await currentPageUrl());
+  const targetUrl = url ?? (await nav.pageInfo()).url ?? "";
   return siteSkillsForUrl(targetUrl);
 }
 
@@ -484,7 +479,7 @@ export async function runSiteBrowserTool(siteId, toolName, args: any = {}) {
  * @returns {Promise<object>} Learned context with knowledge and tool signatures.
  */
 export async function learnContext(url = undefined) {
-  const targetUrl = url ?? (await currentPageUrl());
+  const targetUrl = url ?? (await nav.pageInfo()).url ?? "";
   return loadLearnedContext(targetUrl, {
     agentWorkspace: state.agentWorkspace(),
   });
