@@ -160,7 +160,10 @@ test("a swallowed snapshot hard stop (rejected, not resolved) also collapses to 
   assert.doesNotMatch(result.stdout, /native wording/);
   assert.doesNotMatch(result.stdout, /visiting|failed|ok |summary/);
   assert.equal(result.stdout.match(/takeOverTaskSpace\(\)/g).length, 1);
-  assert.ok(ego.calls >= 3, "every iteration should have hit the snapshot hard stop");
+  assert.ok(
+    ego.calls >= 3,
+    "every iteration should have hit the snapshot hard stop",
+  );
 });
 
 test("an uncaught hard stop discards output without double-printing the message", async () => {
