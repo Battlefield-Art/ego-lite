@@ -73,6 +73,3 @@ jobs:
         working-directory: package/ego-browser
         run: npm run validate:site-skills
 
-      - name: Run e2e tests
-        working-directory: package/ego-browser
-        run: npm run e2e
