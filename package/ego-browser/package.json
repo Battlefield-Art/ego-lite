@@ -9,7 +9,7 @@
   "scripts": {
     "clean": "rm -rf dist artifacts",
     "build": "node scripts/build.mjs",
-    "e2e": "bash scripts/run-e2e.sh",
+    "e2e": "node scripts/run-real-browser-e2e.mjs",
     "prepare": "if [ \"$CI\" = \"true\" ]; then exit 0; fi; cd ../.. && lefthook install",
     "style:check": "prettier --check",
     "typecheck": "tsc --noEmit",

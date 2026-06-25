@@ -55,10 +55,13 @@ test("click resolves selector offsets without the public elementEval helper", as
       type: call.params.type,
       x: call.params.x,
       y: call.params.y,
+      button: call.params.button,
+      buttons: call.params.buttons,
     })),
     [
-      { type: "mousePressed", x: 112, y: 208 },
-      { type: "mouseReleased", x: 112, y: 208 },
+      { type: "mouseMoved", x: 112, y: 208, button: "none", buttons: 0 },
+      { type: "mousePressed", x: 112, y: 208, button: "left", buttons: 1 },
+      { type: "mouseReleased", x: 112, y: 208, button: "left", buttons: 0 },
     ],
   );
 });
@@ -155,4 +158,102 @@ test("scroll propagates user-control errors from wheel dispatch", async () => {
   } finally {
     restore();
   }
+});
+
+test("click triggers probe fallback when CDP click is not trusted", async () => {
+  const originalEgo = globalThis.ego;
+  globalThis.ego = { sendCDPMessage: () => {} };
+  let probeEvaluateCount = 0;
+  const evaluateExpressions = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      if (method === "Runtime.evaluate") {
+        // Probe calls contain __egoBrowserInputProbes; element resolution does not
+        if (params.expression?.includes("__egoBrowserInputProbes")) {
+          probeEvaluateCount++;
+          evaluateExpressions.push(params.expression);
+          if (probeEvaluateCount === 1) {
+            // installClickProbe — elementFromPoint returns truthy
+            return { result: { value: true } };
+          }
+          // finishClickProbe — simulate CDP click was NOT seen
+          return { result: { value: { seen: false, fallback: true } } };
+        }
+        // Element resolution (buildSelectorCenterJs) — return center point
+        return { result: { value: { x: 100, y: 200 } } };
+      }
+      // Input.dispatchMouseEvent calls proceed normally
+      return {};
+    },
+  });
+  try {
+    await click("#target");
+  } finally {
+    restore();
+    if (originalEgo === undefined) delete globalThis.ego;
+    else globalThis.ego = originalEgo;
+  }
+
+  // 2 probe Runtime.evaluate calls: install + finish (element resolution excluded)
+  assert.equal(
+    probeEvaluateCount,
+    2,
+    "Runtime.evaluate called for install and finish probes",
+  );
+  assert.match(
+    evaluateExpressions[0],
+    /__egoBrowserInputProbes/,
+    "install expression sets up click probe",
+  );
+  assert.match(
+    evaluateExpressions[1],
+    /dispatchEvent/,
+    "finish expression contains fallback mouse events",
+  );
+  assert.match(
+    evaluateExpressions[1],
+    /MouseEvent/,
+    "finish expression dispatches MouseEvent in fallback",
+  );
+});
+
+test("click absorbs CDP timeout when probe fallback succeeds", async () => {
+  const originalEgo = globalThis.ego;
+  globalThis.ego = { sendCDPMessage: () => {} };
+  let probeEvaluateCount = 0;
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      if (method === "Runtime.evaluate") {
+        // Probe calls contain __egoBrowserInputProbes; element resolution does not
+        if (params.expression?.includes("__egoBrowserInputProbes")) {
+          probeEvaluateCount++;
+          if (probeEvaluateCount === 1) {
+            return { result: { value: true } };
+          }
+          // Fallback succeeded
+          return { result: { value: { seen: false, fallback: true } } };
+        }
+        // Element resolution (buildSelectorCenterJs) — return center point
+        return { result: { value: { x: 100, y: 200 } } };
+      }
+      if (method === "Input.dispatchMouseEvent") {
+        // Simulate CDP timeout — the browser couldn't dispatch the event
+        throw new Error("CDP request timed out: Input.dispatchMouseEvent");
+      }
+      return {};
+    },
+  });
+  try {
+    // Should NOT throw — timeout is absorbed because fallback succeeded
+    await click("#target");
+  } finally {
+    restore();
+    if (originalEgo === undefined) delete globalThis.ego;
+    else globalThis.ego = originalEgo;
+  }
+
+  assert.ok(
+    probeEvaluateCount >= 2,
+    "probe install and finish were called despite CDP timeout",
+  );
 });
