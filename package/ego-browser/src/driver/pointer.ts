@@ -62,6 +62,9 @@ type ScrollUntilCondition =
   | null;
 type MouseEventOptions = Record<string, unknown>;
 
+const INPUT_EVENT_DELAY_MS = 25;
+const INPUT_DISPATCH_TIMEOUT_MS = 1000;
+
 /**
  * Mouse target accepted by mouse helpers.
  *
@@ -84,18 +87,34 @@ type MouseEventOptions = Record<string, unknown>;
 export async function click(target: MouseTarget, options: ClickOptions = {}) {
   const point = await resolveMouseTarget(target);
   const button = options.button || "left";
+  const buttons = pressedButtons(button);
   const clickCount = options.clickCount ?? options.clicks ?? 1;
   maybeHighlight(point, options.label);
-  await dispatchMouse(point, "mousePressed", {
-    button,
-    buttons: pressedButtons(button),
-    clickCount,
-  });
-  await dispatchMouse(point, "mouseReleased", {
-    button,
-    buttons: 0,
-    clickCount,
-  });
+  const probeId = await installClickProbe(point);
+  let dispatchError: unknown = null;
+  try {
+    await dispatchMouse(point, "mouseMoved", {
+      button: "none",
+      buttons: 0,
+    });
+    await inputEventDelay();
+    await dispatchMouse(point, "mousePressed", {
+      button,
+      buttons,
+      clickCount,
+    });
+    await inputEventDelay();
+    await dispatchMouse(point, "mouseReleased", {
+      button,
+      buttons: 0,
+      clickCount,
+    });
+  } catch (error) {
+    if (!isInputDispatchTimeout(error)) throw error;
+    dispatchError = error;
+  }
+  const completed = await finishClickProbe(point, probeId, clickCount);
+  if (dispatchError && !completed) throw dispatchError;
 }
 
 /**
@@ -120,16 +139,16 @@ export async function doubleClick(
 export async function hover(target: MouseTarget, options: HoverOptions = {}) {
   const point = await resolveMouseTarget(target);
   maybeHighlight(point, options.label);
-  await cdp(
-    "Input.dispatchMouseEvent",
-    {
-      type: "mouseMoved",
-      x: point.x,
-      y: point.y,
-      buttons: 0,
-    },
-    point.sessionId,
-  );
+  const probeId = await installHoverProbe(point);
+  let dispatchError: unknown = null;
+  try {
+    await dispatchMouse(point, "mouseMoved", { buttons: 0 });
+  } catch (error) {
+    if (!isInputDispatchTimeout(error)) throw error;
+    dispatchError = error;
+  }
+  const completed = await finishHoverProbe(point, probeId);
+  if (dispatchError && !completed) throw dispatchError;
 }
 
 /**
@@ -154,47 +173,285 @@ export async function dragMouse(
   const first = resolved[0];
   const last = resolved.at(-1);
   maybeHighlight(first, options.label);
-  await cdp(
-    "Input.dispatchMouseEvent",
-    {
-      type: "mousePressed",
-      x: first.x,
-      y: first.y,
+  const probeId = await installMouseUpProbe(last);
+  let dispatchError: unknown = null;
+  try {
+    await dispatchMouse(first, "mousePressed", {
       button,
       buttons,
       clickCount: 1,
-    },
-    first.sessionId,
-  );
-  for (let i = 1; i < resolved.length; i += 1) {
-    const point = resolved[i];
-    await cdp(
-      "Input.dispatchMouseEvent",
-      {
-        type: "mouseMoved",
-        x: point.x,
-        y: point.y,
-        button,
-        buttons,
-      },
-      point.sessionId ?? first.sessionId,
-    );
-    if (options.delayMs > 0 && i < resolved.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+    });
+    await inputEventDelay();
+    for (let i = 1; i < resolved.length; i += 1) {
+      const point = resolved[i];
+      await dispatchMouse(
+        { ...point, sessionId: point.sessionId ?? first.sessionId },
+        "mouseMoved",
+        {
+          button,
+          buttons,
+        },
+      );
+      await inputEventDelay(options.delayMs > 0 ? options.delayMs : undefined);
     }
+    await dispatchMouse(
+      { ...last, sessionId: last.sessionId ?? first.sessionId },
+      "mouseReleased",
+      {
+        button,
+        buttons: 0,
+        clickCount: 1,
+      },
+    );
+  } catch (error) {
+    if (!isInputDispatchTimeout(error)) throw error;
+    dispatchError = error;
   }
-  await cdp(
-    "Input.dispatchMouseEvent",
-    {
-      type: "mouseReleased",
-      x: last.x,
-      y: last.y,
-      button,
-      buttons: 0,
-      clickCount: 1,
-    },
-    last.sessionId ?? first.sessionId,
-  );
+  const completed = await finishDragProbe(resolved, probeId, button);
+  if (dispatchError && !completed) throw dispatchError;
+}
+
+function inputEventDelay(ms = INPUT_EVENT_DELAY_MS) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function installClickProbe(point: Point) {
+  if (!canProbeInputFallback()) return null;
+  const id = `click_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  try {
+    const result = await cdp(
+      "Runtime.evaluate",
+      {
+        expression: `(() => {
+        const target = document.elementFromPoint(${JSON.stringify(point.x)}, ${JSON.stringify(point.y)});
+        window.__egoBrowserInputProbes ||= {};
+        const probe = { seen: false, target };
+        probe.handler = (event) => {
+          if (event.isTrusted && target && (event.target === target || target.contains(event.target))) {
+            probe.seen = true;
+          }
+        };
+        document.addEventListener("click", probe.handler, true);
+        window.__egoBrowserInputProbes[${JSON.stringify(id)}] = probe;
+        return Boolean(target);
+      })()`,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      point.sessionId,
+    );
+    return result.result?.value ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function finishClickProbe(
+  point: Point,
+  id: string | null,
+  clickCount: number,
+) {
+  if (!id) return false;
+  await inputEventDelay(50);
+  try {
+    const result = await cdp(
+      "Runtime.evaluate",
+      {
+        expression: `(() => {
+        const probes = window.__egoBrowserInputProbes || {};
+        const probe = probes[${JSON.stringify(id)}];
+        if (!probe) return { seen: false, fallback: false };
+        document.removeEventListener("click", probe.handler, true);
+        delete probes[${JSON.stringify(id)}];
+        if (probe.seen || !probe.target) return { seen: probe.seen, fallback: false };
+        const target = probe.target;
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: ${JSON.stringify(point.x)},
+          clientY: ${JSON.stringify(point.y)},
+          button: 0,
+        };
+        target.dispatchEvent(new MouseEvent("mousemove", { ...init, buttons: 0, detail: 0 }));
+        target.dispatchEvent(new MouseEvent("mousedown", { ...init, buttons: 1, detail: ${JSON.stringify(clickCount)} }));
+        target.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0, detail: ${JSON.stringify(clickCount)} }));
+        target.dispatchEvent(new MouseEvent("click", { ...init, buttons: 0, detail: ${JSON.stringify(clickCount)} }));
+        if (${JSON.stringify(clickCount)} > 1) {
+          target.dispatchEvent(new MouseEvent("dblclick", { ...init, buttons: 0, detail: 2 }));
+        }
+        return { seen: false, fallback: true };
+      })()`,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      point.sessionId,
+    );
+    const value = result.result?.value;
+    return Boolean(value?.seen || value?.fallback);
+  } catch {
+    return false;
+  }
+}
+
+async function installMouseUpProbe(point: Point) {
+  if (!canProbeInputFallback()) return null;
+  const id = `drag_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  try {
+    const result = await cdp(
+      "Runtime.evaluate",
+      {
+        expression: `(() => {
+        const target = document.elementFromPoint(${JSON.stringify(point.x)}, ${JSON.stringify(point.y)});
+        window.__egoBrowserInputProbes ||= {};
+        const probe = { seen: false, target };
+        probe.handler = (event) => {
+          if (event.isTrusted && target && (event.target === target || target.contains(event.target))) {
+            probe.seen = true;
+          }
+        };
+        document.addEventListener("mouseup", probe.handler, true);
+        window.__egoBrowserInputProbes[${JSON.stringify(id)}] = probe;
+        return Boolean(target);
+      })()`,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      point.sessionId,
+    );
+    return result.result?.value ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function installHoverProbe(point: Point) {
+  if (!canProbeInputFallback()) return null;
+  const id = `hover_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  try {
+    const result = await cdp(
+      "Runtime.evaluate",
+      {
+        expression: `(() => {
+        const target = document.elementFromPoint(${JSON.stringify(point.x)}, ${JSON.stringify(point.y)});
+        window.__egoBrowserInputProbes ||= {};
+        const probe = { seen: false, target };
+        probe.handler = (event) => {
+          if (event.isTrusted && target && (event.target === target || target.contains(event.target))) {
+            probe.seen = true;
+          }
+        };
+        document.addEventListener("mousemove", probe.handler, true);
+        document.addEventListener("mouseover", probe.handler, true);
+        window.__egoBrowserInputProbes[${JSON.stringify(id)}] = probe;
+        return Boolean(target);
+      })()`,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      point.sessionId,
+    );
+    return result.result?.value ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function finishHoverProbe(point: Point, id: string | null) {
+  if (!id) return false;
+  await inputEventDelay(50);
+  try {
+    const result = await cdp(
+      "Runtime.evaluate",
+      {
+        expression: `(() => {
+        const probes = window.__egoBrowserInputProbes || {};
+        const probe = probes[${JSON.stringify(id)}];
+        if (!probe) return { seen: false, fallback: false };
+        document.removeEventListener("mousemove", probe.handler, true);
+        document.removeEventListener("mouseover", probe.handler, true);
+        delete probes[${JSON.stringify(id)}];
+        if (probe.seen || !probe.target) return { seen: probe.seen, fallback: false };
+        const target = probe.target;
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: ${JSON.stringify(point.x)},
+          clientY: ${JSON.stringify(point.y)},
+          button: 0,
+          buttons: 0,
+        };
+        target.dispatchEvent(new MouseEvent("mousemove", init));
+        target.dispatchEvent(new MouseEvent("mouseover", init));
+        return { seen: false, fallback: true };
+      })()`,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      point.sessionId,
+    );
+    const value = result.result?.value;
+    return Boolean(value?.seen || value?.fallback);
+  } catch {
+    return false;
+  }
+}
+
+async function finishDragProbe(
+  points: Point[],
+  id: string | null,
+  button: MouseButton,
+) {
+  if (!id) return false;
+  await inputEventDelay(50);
+  const first = points[0];
+  const last = points.at(-1);
+  try {
+    const result = await cdp(
+      "Runtime.evaluate",
+      {
+        expression: `(() => {
+        const probes = window.__egoBrowserInputProbes || {};
+        const probe = probes[${JSON.stringify(id)}];
+        if (!probe) return { seen: false, fallback: false };
+        document.removeEventListener("mouseup", probe.handler, true);
+        delete probes[${JSON.stringify(id)}];
+        if (probe.seen) return { seen: true, fallback: false };
+        const mouseButton = ${JSON.stringify(button === "left" ? 0 : button === "middle" ? 1 : 2)};
+        const eventFor = (type, point, buttons) => {
+          const target = document.elementFromPoint(point.x, point.y) || document.body;
+          target.dispatchEvent(new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX: point.x,
+            clientY: point.y,
+            button: mouseButton,
+            buttons,
+            detail: type === "mousemove" ? 0 : 1,
+          }));
+        };
+        const points = ${JSON.stringify(points.map(({ x, y }) => ({ x, y })))};
+        eventFor("mousedown", points[0], 1);
+        for (const point of points.slice(1)) eventFor("mousemove", point, 1);
+        eventFor("mouseup", points.at(-1), 0);
+        return { seen: false, fallback: true };
+      })()`,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      last.sessionId ?? first.sessionId,
+    );
+    const value = result.result?.value;
+    return Boolean(value?.seen || value?.fallback);
+  } catch {
+    return false;
+  }
+}
+
+function canProbeInputFallback() {
+  return Boolean((globalThis as any).ego?.sendCDPMessage);
 }
 
 /**
@@ -342,7 +599,7 @@ async function dispatchMouse(
   type: string,
   options: MouseEventOptions = {},
 ) {
-  await cdp(
+  await browserCdp(
     "Input.dispatchMouseEvent",
     {
       type,
@@ -351,7 +608,13 @@ async function dispatchMouse(
       ...options,
     },
     point.sessionId,
+    INPUT_DISPATCH_TIMEOUT_MS,
   );
+}
+
+function isInputDispatchTimeout(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /CDP request timed out: Input\.dispatchMouseEvent/.test(message);
 }
 
 async function resolveMouseTarget(target: MouseTarget): Promise<Point> {
