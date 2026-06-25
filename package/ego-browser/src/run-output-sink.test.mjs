@@ -20,6 +20,22 @@ function hardStopEgo(error_code) {
   };
 }
 
+// A native ego whose `snapshot` REJECTS with a hard-stop code — the shape the real
+// bindings use under user control (helpers.ts probeAgentControl relies on it). driver/
+// observe.ts calls browserEgo().snapshot() directly, so the rejection only reaches the
+// sink if snapshot() routes it through buildEgoError.
+function snapshotHardStopEgo(error_code) {
+  return {
+    calls: 0,
+    async snapshot() {
+      this.calls += 1;
+      const err = new Error("native wording that should never reach the agent");
+      err.error_code = error_code;
+      throw err;
+    },
+  };
+}
+
 function captureStream() {
   const chunks = [];
   return {
@@ -115,6 +131,36 @@ test("an inactive / unassigned task space is also a hard stop", async () => {
   assert.match(result.stdout, /no longer assigned to the agent/);
   assert.match(result.stdout, /claimTaskSpace\(id\)/);
   assert.doesNotMatch(result.stdout, /swallowed|business/);
+});
+
+test("a swallowed snapshot hard stop (rejected, not resolved) also collapses to one message", async () => {
+  // snapshot rejects directly instead of resolving with { error }, so it bypasses
+  // assertNoEgoError; the collapse only works if snapshot() rebuilds it via buildEgoError.
+  const ego = snapshotHardStopEgo("EGO_TASK_SPACE_USER_IN_CONTROL");
+  const result = await runScript(
+    `
+      for (const site of ["a", "b", "c"]) {
+        cliLog("visiting " + site);
+        try {
+          await snapshotText();
+          cliLog("ok " + site);
+        } catch (e) {
+          cliLog("failed " + site + ": " + e.message);
+        }
+      }
+      cliLog("summary: done");
+    `,
+    ego,
+  );
+
+  assert.equal(result.exitCode, 0);
+  // The owned guidance survives once; the native wording and business logs are dropped.
+  assert.match(result.stdout, /taken control of this task space/);
+  assert.match(result.stdout, /takeOverTaskSpace\(\)/);
+  assert.doesNotMatch(result.stdout, /native wording/);
+  assert.doesNotMatch(result.stdout, /visiting|failed|ok |summary/);
+  assert.equal(result.stdout.match(/takeOverTaskSpace\(\)/g).length, 1);
+  assert.ok(ego.calls >= 3, "every iteration should have hit the snapshot hard stop");
 });
 
 test("an uncaught hard stop discards output without double-printing the message", async () => {
