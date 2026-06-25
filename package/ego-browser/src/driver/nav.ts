@@ -1,14 +1,16 @@
 import {
   browserEgo,
   clearPreferredTarget,
+  ensureSession,
   invalidateSession,
+  isBrowserRuntime,
+  pendingDialog,
   setPreferredTarget,
 } from "../browser-runtime.js";
-import { cdp } from "../cdp-eval.js";
+import { cdp, js } from "../cdp-eval.js";
 import { assertNoEgoError } from "../ego-errors.js";
 import { state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
-import { readPageInfo, waitForValidViewport } from "./viewport.js";
 
 export const INTERNAL_URL_PREFIXES = [
   "chrome://",
@@ -47,26 +49,6 @@ type OpenOrReuseTabOptions = {
 
 type TabTarget = string | { targetId: string };
 
-async function activateTabTarget(targetId: string) {
-  await cdp("Target.activateTarget", { targetId });
-  invalidateSession();
-  setPreferredTarget(targetId);
-}
-
-async function callNativeTabReady(targetId: string) {
-  const ego = globalThis.ego as any;
-  if (ego && typeof ego.ensureTabReady === "function") {
-    assertNoEgoError(await ego.ensureTabReady(targetId), "ensureTabReady");
-  } else if (ego && typeof ego.ensureViewport === "function") {
-    assertNoEgoError(await ego.ensureViewport(targetId), "ensureViewport");
-  }
-}
-
-async function ensureTabReady(targetId: string, context = "tab") {
-  await callNativeTabReady(targetId);
-  return waitForValidViewport(`${context} ${targetId}`);
-}
-
 /**
  * Navigate the current tab to a URL using CDP Page.navigate.
  * @param {string} url Absolute or browser-supported URL to load.
@@ -95,9 +77,6 @@ export async function gotoAndWait(
   if (settle > 0) {
     await state.sleep(settle * 1000);
   }
-  if (options.wait !== false) {
-    await waitForValidViewport("gotoAndWait");
-  }
   return { navigation, loaded };
 }
 
@@ -106,7 +85,16 @@ export async function gotoAndWait(
  * @returns {Promise<{url:string,title:string,w:number,h:number,sx:number,sy:number,pw:number,ph:number}|{dialog:object}>}
  */
 export async function pageInfo() {
-  return readPageInfo();
+  if (isBrowserRuntime()) {
+    await ensureSession();
+    const dialog = pendingDialog();
+    if (dialog) {
+      return { dialog };
+    }
+  }
+  const expression =
+    "JSON.stringify({url:location.href,title:document.title,w:innerWidth,h:innerHeight,sx:scrollX,sy:scrollY,pw:document.documentElement.scrollWidth,ph:document.documentElement.scrollHeight})";
+  return JSON.parse(await js(expression));
 }
 
 /**
@@ -157,8 +145,9 @@ export async function currentTab() {
  */
 export async function switchTab(target: string | { targetId: string }) {
   const targetId = typeof target === "object" ? target.targetId : target;
-  await activateTabTarget(targetId);
-  await ensureTabReady(targetId, "switchTab");
+  await cdp("Target.activateTarget", { targetId });
+  invalidateSession();
+  setPreferredTarget(targetId);
   return targetId;
 }
 
@@ -200,17 +189,12 @@ export async function openOrReuseTab(
     return { ...existing, active: true, reused: true };
   }
   const targetId = await newTab(url);
-  await switchTab(targetId);
-  const waited = options.wait !== false;
-  if (waited) {
+  if (options.wait !== false) {
     await waitForDocumentLoad({ timeout: options.timeout ?? 20 });
   }
   const settle = Number(options.settle ?? 0);
   if (settle > 0) {
     await state.sleep(settle * 1000);
-  }
-  if (waited || settle > 0) {
-    await ensureTabReady(targetId, "openOrReuseTab");
   }
   return { targetId, url, title: "", active: true, reused: false };
 }
@@ -252,7 +236,6 @@ export async function ensureRealTab() {
     current?.url &&
     !INTERNAL_URL_PREFIXES.some((prefix) => current.url.startsWith(prefix))
   ) {
-    await ensureTabReady(current.targetId, "ensureRealTab");
     return current;
   }
   await switchTab(tabs[0].targetId);
