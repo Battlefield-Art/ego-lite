@@ -6,6 +6,7 @@ import {
 
 import { formatCliLogValue } from "./format.js";
 import * as helpers from "./helpers.js";
+import { bufferOutput, flushSink, resetSink } from "./output-sink.js";
 
 type WritableLike = {
   write(chunk: string): unknown;
@@ -105,23 +106,34 @@ export async function runMain(options: RunMainOptions = {}) {
 }
 
 async function execute(code: string, stdout: WritableLike) {
-  const context = await executionContext(stdout);
+  resetSink();
+  const context = await executionContext();
   Object.assign(globalThis, context);
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
   const names = Object.keys(context);
   const values = Object.values(context);
   const fn = new AsyncFunction(...names, `"use strict";\n${code}`);
-  await fn(...values);
+  try {
+    await fn(...values);
+  } catch (error) {
+    // The thrown Error surfaces the hard-stop message on its own, so flush as a thrown
+    // completion (drop the buffer, stay silent) and let it propagate.
+    flushSink(stdout, true);
+    throw error;
+  }
+  flushSink(stdout, false);
 }
 
-export async function executionContext(stdout: WritableLike = processStdout) {
+export async function executionContext() {
   const agentHelpers = await helpers.loadAgentHelpers();
   // Single source of truth for the agent-facing surface: the same helperContext()
   // that installEgoSdk() exposes in the browser runtime, so the CLI and SDK paths
   // cannot drift apart (and `help` exists in both).
   const context: Record<string, any> = helpers.helperContext(agentHelpers);
   context.cliLog = (...args: unknown[]) => {
-    write(stdout, `${args.map(formatCliLogValue).join(" ")}\n`);
+    // Buffer rather than write through; execute() flushes (or discards on hard stop)
+    // once the script settles. Keeps the CLI path identical to the SDK path.
+    bufferOutput(`${args.map(formatCliLogValue).join(" ")}\n`);
   };
   return context;
 }

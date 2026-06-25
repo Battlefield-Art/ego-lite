@@ -15,6 +15,8 @@
  * helpers.ts and driver/nav.ts.
  */
 
+import { markHardStop } from "./output-sink.js";
+
 /** Stable error codes emitted by the native ego bindings. */
 export const EGO_ERROR_CODES = [
   "EGO_BROWSER_UNAVAILABLE",
@@ -114,6 +116,23 @@ export function isEgoUserControlError(err: unknown): boolean {
 }
 
 /**
+ * Codes that halt the whole agent task rather than mark a routable obstacle: a task
+ * space the user has taken back, or one that is inactive / not assigned to this agent.
+ * Both require the user to explicitly hand control back before work can resume.
+ */
+function isEgoHardStopCode(code: string | undefined): boolean {
+  return (
+    code === "EGO_TASK_SPACE_USER_IN_CONTROL" ||
+    code === "EGO_TASK_SPACE_INACTIVE"
+  );
+}
+
+/** Whether an ego error is a hard stop the agent must not retry or route around. */
+export function isEgoHardStopError(err: unknown): boolean {
+  return isEgoHardStopCode(egoErrorCode(err));
+}
+
+/**
  * Build an Error carrying the resolved message and stable error_code from any ego
  * error shape. `op`, when given, prefixes the message with the failing operation.
  * Shared by assertNoEgoError (which throws it) and the CDP-send failure path (which
@@ -125,6 +144,14 @@ export function buildEgoError(
   op?: string,
 ): Error & { error_code?: string } {
   const { code, message } = resolveEgoError(err);
+  if (isEgoHardStopCode(code)) {
+    // buildEgoError is the single birthplace of every ego error — assertNoEgoError and
+    // the CDP-send failure path both route through it — so recording the hard stop here
+    // catches it even when the agent's own try/catch later swallows the thrown Error.
+    // The op-less owned message is the one the agent should see, regardless of which
+    // operation surfaced it.
+    markHardStop(message);
+  }
   const error: Error & { error_code?: string } = new Error(
     op ? `${op}: ${message}` : message,
   );
