@@ -8,6 +8,11 @@ import {
   setPreferredTarget,
 } from "./browser-runtime.js";
 import { formatCliLogValue } from "./format.js";
+import {
+  bufferOutput,
+  installLifecycleFlush,
+  resetSink,
+} from "./output-sink.js";
 import { runMain } from "./run.js";
 
 type HelperFunction = (...args: unknown[]) => unknown;
@@ -67,6 +72,7 @@ export function installEgoSdk(
     });
     installed[name] = exposed as HelperFunction;
   }
+  const usingDefaultCliLog = !options.cliLog;
   const cliLogFn = options.cliLog || createCliLog();
   Object.defineProperty(target, "cliLog", {
     value: cliLogFn,
@@ -75,6 +81,12 @@ export function installEgoSdk(
     enumerable: false,
   });
   installed.cliLog = cliLogFn;
+  if (usingDefaultCliLog) {
+    // SDK path: the host runs each heredoc in a fresh short-lived process and never
+    // calls execute(), so reset the per-run sink and flush it on process teardown.
+    resetSink();
+    installLifecycleFlush(process.stdout);
+  }
   if (target.ego && typeof target.ego === "object") {
     target.ego.helpers = installed;
     target.ego.learnings = {};
@@ -107,11 +119,11 @@ if (isDirectCli()) {
   installEgoSdk();
 }
 
-function createCliLog(
-  stream: { write(chunk: string): unknown } = process.stdout,
-) {
+function createCliLog() {
   return (...args: unknown[]) => {
-    stream.write(`${args.map(formatCliLogValue).join(" ")}\n`);
+    // Buffer instead of writing through: a hard stop later in the run must be able to
+    // discard everything logged so far. The buffer is flushed on process teardown.
+    bufferOutput(`${args.map(formatCliLogValue).join(" ")}\n`);
   };
 }
 
