@@ -27,7 +27,7 @@ jobs:
       - run: npm run validate:site-skills
 
   release:
-    if: github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -51,31 +51,10 @@ jobs:
         id: release
         run: |
           ref_name="${GITHUB_REF_NAME}"
-          short_sha="$(git rev-parse --short HEAD)"
           supported="true"
           previous_tag=""
 
-          if [ "$ref_name" = "dev" ]; then
-            latest_beta="$(git tag --sort=-v:refname --list 'v*.*.*-beta.*' | head -1 || true)"
-            latest_stable="$(git tag --sort=-v:refname --list 'v*.*.*' --list '[0-9]*.[0-9]*' | grep -E '^(v?[0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+)$' | head -1 || true)"
-
-            if [ -n "$latest_beta" ]; then
-              base_version="${latest_beta%%-beta.*}"
-            elif [[ "$latest_stable" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-              base_version="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
-            elif [[ "$latest_stable" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
-              base_version="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.1"
-            else
-              base_version="v0.1.0"
-            fi
-
-            version_tag="$base_version-nightly.$(date -u +%Y%m%d).$short_sha"
-            release_tag="$version_tag"
-            title="$version_tag"
-            prerelease="true"
-            latest="false"
-            previous_tag="$(git tag --merged HEAD --sort=-creatordate --list 'v*.*.*-nightly.*' | grep -v "^$release_tag$" | head -1 || true)"
-          elif [[ "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+          if [[ "$ref_name" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
             release_tag="$ref_name"
             version_tag="$ref_name"
             title="Beta $ref_name"
@@ -128,10 +107,7 @@ jobs:
           release_args=()
           notes_args=()
 
-          if [[ "$release_tag" == v*.*.*-nightly.* ]]; then
-            git tag -f "$release_tag" "$commit_sha"
-            git push -f origin "refs/tags/$release_tag"
-          elif [ "$prerelease" = "false" ] && ! git merge-base --is-ancestor "$commit_sha" origin/main; then
+          if [ "$prerelease" = "false" ] && ! git merge-base --is-ancestor "$commit_sha" origin/main; then
             echo "Stable release tags must point to commits reachable from main."
             exit 1
           fi
