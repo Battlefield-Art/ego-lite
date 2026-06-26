@@ -97,6 +97,24 @@ export async function startFixtureServer(taskName) {
       }, delayMs);
       return;
     }
+    if (url.pathname === "/api/status") {
+      const code = Number(url.searchParams.get("code") || 200);
+      res.writeHead(code, {
+        "content-type": "text/plain",
+        "access-control-allow-origin": "*",
+      });
+      res.end(`status ${code}`);
+      return;
+    }
+    if (url.pathname === "/api/bytes") {
+      const n = Math.max(0, Number(url.searchParams.get("n") || 0));
+      res.writeHead(200, {
+        "content-type": "text/plain",
+        "access-control-allow-origin": "*",
+      });
+      res.end("a".repeat(n));
+      return;
+    }
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
@@ -119,6 +137,17 @@ export async function startFixtureServer(taskName) {
     if (url.pathname === "/secondary") {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(pageHtml("secondary"));
+      return;
+    }
+    if (url.pathname === "/slow-page") {
+      const delayMs = Number(url.searchParams.get("ms") || 250);
+      setTimeout(() => {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(
+          "<!doctype html><html><head><title>slow page</title></head>" +
+            '<body><h1 id="slow-marker">slow document loaded</h1></body></html>',
+        );
+      }, delayMs);
       return;
     }
     if (url.pathname === "/favicon.ico") {
@@ -253,6 +282,10 @@ function pageHtml(kind) {
       <iframe id="fixture-frame" src="/frame.html"></iframe>
       <div id="inner-scroll"><div id="inner-scroll-content">Inner scroll marker</div></div>
       <section id="scroll-area"><div id="bottom-marker">Bottom marker</div></section>
+      <label>Email input <input id="email-input" type="email" value="old@example.com"></label>
+      <label>Number input <input id="number-input" type="number" value="123"></label>
+      <label>Controlled input <input id="controlled-input" type="text"></label>
+      <span id="controlled-state"></span>
       ${kind === "frame" ? '<div id="iframe-marker" data-iframe="true" style="border:2px solid #44f;padding:8px;margin-top:8px;">iframe target</div>' : ""}
     </main>
     <script>
@@ -271,6 +304,7 @@ function pageHtml(kind) {
         tabOrder: [],
         checkboxChecked: false,
         dropdownValue: "alpha",
+        valueEvents: {},
       };
       const count = document.querySelector("#click-count");
       const clickButton = document.querySelector("#click-button");
@@ -333,6 +367,41 @@ function pageHtml(kind) {
         document.querySelector("#file-name").textContent =
           Array.from(event.target.files).map((file) => file.name).join(",");
       });
+
+      /* value inputs (email/number) — track input/change for fillInput regressions */
+      for (const id of ["email-input", "number-input"]) {
+        const valueInput = document.querySelector("#" + id);
+        for (const type of ["input", "change"]) {
+          valueInput.addEventListener(type, () => {
+            (window.__fixtureState.valueEvents[id] ||= []).push(type);
+          });
+        }
+      }
+
+      /* react-style controlled input — every input event writes value back through
+         the native prototype setter, mirroring React/Vue controlled components.
+         Guards fillInput's persistence on inputs that fight back. */
+      (function () {
+        const el = document.querySelector("#controlled-input");
+        const stateEl = document.querySelector("#controlled-state");
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        ).set;
+        let state = "";
+        function render() {
+          if (el.value !== state) setter.call(el, state);
+          stateEl.textContent = state;
+        }
+        el.addEventListener("input", () => {
+          state = el.value;
+          render();
+        });
+        el.addEventListener("change", () => {
+          stateEl.textContent = state + " (change)";
+        });
+        render();
+      })();
 
       /* context menu zone — captures right-click */
       const contextZone = document.querySelector("#context-menu-zone");
