@@ -60,7 +60,7 @@ Notes:
 
 A task space is an **isolated browsing context** that ego-browser provides for AI Agents. Each task space has its own set of tabs but **inherits the current user's login state** by default, so Agents can operate on authenticated sites without competing with or disturbing the user's normal browser windows.
 
-A task space is the container for the current user task; closing it ends that task's browser context and prevents the agent from continuing the same task later, so do not close it until the task is genuinely finished.
+Closing all tabs in a task space is equivalent to closing that task space.
 
 A task often takes multiple heredoc rounds to complete. Because the Node.js runtime exits after each heredoc and retains no state, normal working heredocs should start with an explicit call to `useOrCreateTaskSpace(nameOrId)` to reuse the same space — this lets you operate continuously and reuse tabs across rounds. The exception is resuming after a handoff: once the user confirms "continue" (through an Ask or in chat), start the next heredoc with `takeOverTaskSpace(nameOrId)` instead.
 
