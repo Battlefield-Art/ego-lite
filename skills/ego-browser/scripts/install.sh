@@ -4,8 +4,8 @@
 set -eu
 
 # Default package URL and installation paths.
-DMG_URL_ARM64="https://cdn.ego.app/setup/macos/arm64/egolite.dmg"
-DMG_URL_X64="https://cdn.ego.app/setup/macos/x64/egolite.dmg"
+DMG_URL_ARM64="https://cdn.ego.app/channel/github/setup/macos/arm64/egolite.dmg"
+DMG_URL_X64="https://cdn.ego.app/channel/github/setup/macos/x64/egolite.dmg"
 APP_NAME="ego lite"
 APP_BUNDLE_NAME="$APP_NAME.app"
 APP_PATH="/Applications/$APP_BUNDLE_NAME"
