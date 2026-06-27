@@ -1,6 +1,6 @@
 export function navigationCase() {
   return `
-    await switchTaskSpace(taskName);
+    await useOrCreateTaskSpace(taskName);
     const home = await resetHome();
 
     const info = await pageInfo();
@@ -19,6 +19,8 @@ export function navigationCase() {
 
     const real = await ensureRealTab();
     assert(real && real.targetId, "ensureRealTab returns a real tab");
+    const realTabListed = (await listTabs()).some((t) => t.targetId === real.targetId);
+    assert(realTabListed, "ensureRealTab target appears in listTabs");
 
     const reused = await openOrReuseTab(baseUrl + "/", { wait: true, timeout: 10 });
     assertEqual(reused.reused, true, "openOrReuseTab reuses exact home URL");
@@ -99,7 +101,7 @@ export function navigationCase() {
     assert(nav.loaded, "gotoAndWait returns loaded true");
 
     const frame = await iframeTarget("/frame.html");
-    assert(frame === null || typeof frame === "string", "iframeTarget returns a target id or null");
+    assert(frame === null || (typeof frame === "string" && frame.length > 0), "iframeTarget returns a non-empty session id or null");
     const missingFrame = await iframeTarget("/missing-frame-for-e2e");
     assertEqual(missingFrame, null, "iframeTarget returns null for missing frames");
   `;

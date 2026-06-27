@@ -14,6 +14,7 @@
     "style:check": "prettier --check",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && npm run typecheck && node --test \"src/**/*.test.mjs\" \"test/*.test.js\"",
+    "mutation-check": "npm run build && node scripts/mutation-check.mjs",
     "validate:learnings": "npm run build && EGO_BROWSER_AGENT_WORKSPACE=../../skills/ego-browser node dist/scripts/validate-site-skills.js",
     "validate:site-skills": "npm run build && EGO_BROWSER_AGENT_WORKSPACE=../../skills/ego-browser node dist/scripts/validate-site-skills.js"
   },

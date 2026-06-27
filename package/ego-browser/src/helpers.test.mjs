@@ -493,6 +493,40 @@ test("useOrCreateTaskSpace resolves string names before numeric id strings", asy
   assert.deepEqual(calls, [["listTaskSpaces"], ["useTaskSpace", 8]]);
 });
 
+test("useOrCreateTaskSpace resolves numeric strings by id when name is absent", async () => {
+  const calls = [];
+  await withEgo(
+    {
+      async listTaskSpaces() {
+        calls.push(["listTaskSpaces"]);
+        return {
+          taskSpaces: [
+            {
+              taskId: "checkout-flow",
+              id: 7,
+              name: "checkout-flow",
+              ownership: "agent",
+            },
+          ],
+        };
+      },
+      useTaskSpace(id) {
+        calls.push(["useTaskSpace", id]);
+        return id;
+      },
+    },
+    async () => {
+      assert.deepEqual(await useOrCreateTaskSpace("7"), {
+        taskId: "checkout-flow",
+        id: 7,
+        name: "checkout-flow",
+        ownership: "agent",
+      });
+    },
+  );
+  assert.deepEqual(calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
+});
+
 test("useOrCreateTaskSpace rejects missing numeric ids instead of creating", async () => {
   const calls = [];
   await withEgo(

@@ -1,6 +1,6 @@
-export function runtimeCase() {
+export function waitHelpersCase() {
   return `
-    await switchTaskSpace(taskName);
+    await useOrCreateTaskSpace(taskName);
     await resetHome();
 
     const waitedAt = Date.now();
@@ -20,6 +20,13 @@ export function runtimeCase() {
       false,
       "waitForElement visible:true rejects hidden elements"
     );
+  `;
+}
+
+export function fetchHelpersCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
 
     const serverText = await serverFetch(baseUrl + "/api/text", { timeout: 5 });
     assertEqual(serverText, "server text fixture", "serverFetch reads fixture API");
@@ -83,6 +90,13 @@ export function runtimeCase() {
       "HTTP 500",
       "browserFetch reports HTTP errors"
     );
+  `;
+}
+
+export function cdpJsHelpCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
 
     await cdp("Network.enable");
     await js(

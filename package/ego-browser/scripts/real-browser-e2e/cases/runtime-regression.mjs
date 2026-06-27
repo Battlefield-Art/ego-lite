@@ -47,7 +47,19 @@ export function runtimeRegressionCase() {
     /* js rejects invalid input types (neither string nor function). */
     await assertRejectsAny(() => js(123), "js rejects non-string/function input");
 
-    /* serverFetch returns the body and respects exact content length. */
+    /* serverFetch returns the body and respects exact content length, including
+       lower boundary values (n=0, n=1) that were previously only tested in the
+       now-removed theory-expanded suite. */
+    assertEqual(
+      (await serverFetch(baseUrl + "/api/bytes?n=0", { timeout: 5 })).length,
+      0,
+      "serverFetch returns empty body for zero-byte request"
+    );
+    assertEqual(
+      (await serverFetch(baseUrl + "/api/bytes?n=1", { timeout: 5 })).length,
+      1,
+      "serverFetch returns one byte for single-byte request"
+    );
     const bytes = await serverFetch(baseUrl + "/api/bytes?n=4096", { timeout: 5 });
     assertEqual(bytes.length, 4096, "serverFetch returns a body of the exact requested length");
 

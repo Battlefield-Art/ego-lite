@@ -194,99 +194,309 @@ function pageHtml(kind) {
     <meta charset="utf-8">
     <title>${title}</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 24px; }
-      button, input { font: inherit; }
-      #hover-zone, #drag-source, #drag-target {
-        align-items: center;
-        border: 1px solid #777;
-        display: inline-flex;
-        height: 64px;
-        justify-content: center;
-        margin: 8px;
-        width: 160px;
+      :root {
+        --bg: #f5f6f8;
+        --surface: #ffffff;
+        --text: #1a1a2e;
+        --text2: #6b7280;
+        --border: #e2e5ea;
+        --accent: #3b82f6;
+        --accent-bg: #eff6ff;
+        --green: #16a34a;
+        --green-bg: #f0fdf4;
+        --red: #dc2626;
+        --purple-bg: #f5f3ff;
+        --radius: 6px;
       }
-      #drag-target { background: #eef7ee; }
-      #rich-editor {
-        border: 1px solid #777;
-        min-height: 48px;
-        padding: 8px;
-        width: 320px;
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        padding: 10px 16px;
+        line-height: 1.35;
+        font-size: 13px;
       }
+      main { max-width: 960px; }
+      h1 { font-size: 1.1rem; font-weight: 700; margin: 0 0 2px; letter-spacing: -0.02em; }
+      h2 { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text2); margin: 6px 0 2px; }
+      [data-testid="status"] { color: var(--text2); font-size: 0.8rem; margin: 0 0 6px; }
+
+      .card-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 2px; }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 6px 10px;
+        margin-bottom: 4px;
+      }
+
+      /* Buttons */
+      button, .btn {
+        font: inherit; font-size: 0.8rem; font-weight: 500;
+        padding: 4px 10px; border-radius: 5px;
+        border: 1px solid var(--border); background: var(--surface);
+        color: var(--text); cursor: pointer;
+      }
+      button:hover, .btn:hover { background: #f0f1f3; }
+      .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .btn-primary:hover { background: #2563eb; }
+      #click-count {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 22px; height: 22px; padding: 0 6px;
+        background: var(--accent-bg); color: var(--accent);
+        border-radius: 11px; font-size: 0.8rem; font-weight: 600;
+        margin-left: 6px;
+      }
+      .duplicate-action { margin-right: 3px; }
+
+      /* Links */
+      a { color: var(--accent); text-decoration: none; font-weight: 500; font-size: 0.8rem; }
+      a:hover { text-decoration: underline; }
+
+      /* Form controls */
+      label { display: block; margin-bottom: 4px; font-size: 0.8rem; color: var(--text2); }
+      label span { display: block; margin-bottom: 1px; font-weight: 500; font-size: 0.75rem; }
+      input:not([type="checkbox"]):not([type="file"]), textarea, select {
+        font: inherit; font-size: 0.8rem;
+        padding: 3px 8px; border: 1px solid var(--border);
+        border-radius: 4px; width: 100%; max-width: 220px;
+        background: var(--surface); color: var(--text);
+      }
+      input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+      textarea { resize: vertical; min-height: 28px; height: 28px; }
+      input[type="file"] { font-size: 0.75rem; }
+      input[type="checkbox"] { margin-right: 4px; vertical-align: middle; }
+      .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+      .form-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+      /* Interaction zones */
+      .zone {
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 6px 14px; border: 2px dashed var(--border);
+        border-radius: var(--radius); font-size: 0.8rem; color: var(--text2);
+        user-select: none;
+      }
+      #hover-zone { width: 100px; height: 36px; }
+      #hover-zone:hover { border-color: var(--accent); background: var(--accent-bg); }
+      #drag-source, #drag-target {
+        width: 100px; height: 36px; margin: 2px;
+      }
+      #drag-source { border-style: solid; cursor: grab; }
+      #drag-source:active { cursor: grabbing; }
+      #drag-target { background: var(--green-bg); border-color: var(--green); }
+      .drag-row { display: flex; align-items: center; gap: 6px; }
+      .drag-arrow { color: var(--text2); font-size: 1rem; }
+
+      /* Context menu zone */
       #context-menu-zone {
-        align-items: center;
-        background: #f7eef7;
-        border: 1px dashed #777;
-        display: inline-flex;
-        height: 48px;
-        justify-content: center;
-        margin: 8px;
-        width: 160px;
+        background: var(--purple-bg);
+        border-color: #a78bfa; width: 100px; height: 36px;
       }
-      #dynamic-container { min-height: 24px; margin: 8px 0; }
+
+      /* Rich editor */
+      #rich-editor {
+        border: 1px solid var(--border); border-radius: 4px;
+        min-height: 28px; padding: 4px 8px; width: 100%; max-width: 220px;
+        font-size: 0.8rem;
+      }
+      #rich-editor:focus { outline: none; border-color: var(--accent); }
+
+      /* Dynamic DOM */
+      .dynamic-actions { display: flex; gap: 4px; }
+      #dynamic-container { min-height: 4px; margin-top: 4px; }
+      #dynamic-element {
+        display: inline-block; background: var(--green-bg);
+        border: 1px solid var(--green); border-radius: 4px;
+        padding: 2px 8px; font-size: 0.8rem; color: var(--green);
+      }
+
+      /* Canvas */
+      #draw-canvas {
+        border: 1px solid var(--border); border-radius: var(--radius);
+        cursor: crosshair; display: block; background: #fff;
+      }
+
+      /* HTML5 DnD */
+      #dnd-source {
+        width: 80px; height: 34px;
+        background: var(--accent-bg); border: 2px solid var(--accent);
+        border-radius: var(--radius); display: inline-flex;
+        align-items: center; justify-content: center;
+        font-size: 0.8rem; font-weight: 500; color: var(--accent);
+        cursor: grab; margin: 2px;
+      }
+      #dnd-source:active { cursor: grabbing; }
+      #dnd-target {
+        width: 100px; height: 34px;
+        background: var(--green-bg); border: 2px dashed var(--green);
+        border-radius: var(--radius); display: inline-flex;
+        align-items: center; justify-content: center;
+        font-size: 0.8rem; font-weight: 500; color: var(--green);
+        margin: 2px;
+      }
+      #dnd-target.drag-over { background: #dcfce7; border-style: solid; }
+      .dnd-row { display: flex; align-items: center; gap: 8px; }
+
+      /* Pointer events area */
+      #pointer-area {
+        width: 100%; height: 70px;
+        border: 1px solid var(--border); border-radius: var(--radius);
+        background: #fafbfc; position: relative;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.8rem; color: var(--text2);
+        touch-action: none;
+      }
+      #pointer-area .pointer-indicator {
+        position: absolute; width: 6px; height: 6px;
+        border-radius: 50%; background: var(--accent);
+        transform: translate(-50%, -50%); pointer-events: none;
+        opacity: 0;
+      }
+
+      /* Tab trap */
+      #tab-trap { display: flex; gap: 4px; }
       .tab-stop {
-        border: 1px solid #999;
-        display: inline-block;
-        margin: 4px;
-        padding: 4px 12px;
+        border: 1px solid var(--border); border-radius: 4px;
+        display: inline-block; padding: 3px 10px;
+        font-size: 0.8rem; cursor: pointer;
       }
-      .tab-stop:focus { outline: 2px solid #44f; }
+      .tab-stop:focus { outline: none; border-color: var(--accent); background: var(--accent-bg); }
+
+      /* Scroll areas */
       #inner-scroll {
-        border: 1px solid #777;
-        height: 120px;
-        margin-top: 12px;
-        overflow: auto;
-        width: 320px;
+        border: 1px solid var(--border); border-radius: var(--radius);
+        height: 80px; margin-top: 4px; overflow: auto; width: 220px;
       }
-      #inner-scroll-content { height: 620px; padding-top: 520px; }
+      #inner-scroll-content { height: 620px; padding-top: 520px; font-size: 0.8rem; color: var(--text2); }
       #scroll-area { height: 1800px; padding-top: 16px; }
-      #bottom-marker { margin-top: 1450px; }
+      #bottom-marker { margin-top: 1450px; font-size: 0.8rem; color: var(--text2); }
+
+      /* Utility */
       #delayed { display: none; }
+      #never-visible { display: none; }
+      #file-name, #key-log { font-size: 0.75rem; color: var(--text2); margin: 2px 0; min-height: 1em; }
+      #controlled-state { font-size: 0.75rem; color: var(--text2); margin-left: 6px; }
+      #dnd-status, #pointer-log { font-size: 0.75rem; color: var(--text2); margin-top: 2px; }
+      iframe { display: none; }
     </style>
   </head>
   <body>
     <main>
       <h1>${heading}</h1>
       <p data-testid="status">ready</p>
-      <button id="click-button" aria-label="Increment counter">Click counter</button>
-      <button class="duplicate-action" type="button">Duplicate action</button>
-      <button class="duplicate-action" type="button">Duplicate action</button>
-      <a id="nav-link" href="/nav-target">Go to nav target</a>
-      <span id="click-count">0</span>
-      <div id="hover-zone">Hover zone</div>
-      <div id="drag-source">Drag source</div>
-      <div id="drag-target">Drag target</div>
-      <label>Text input <input id="text-input" value="initial"></label>
-      <label>Append input <input id="append-input" value="base"></label>
-      <label>Text area <textarea id="text-area">seed</textarea></label>
-      <label>File input <input id="file-input" type="file" multiple></label>
-      <div id="file-name"></div>
-      <div id="key-log"></div>
-      <label>Dropdown <select id="dropdown">
-        <option value="alpha">Alpha</option>
-        <option value="beta">Beta</option>
-        <option value="gamma">Gamma</option>
-      </select></label>
-      <label><input type="checkbox" id="checkbox"> Toggle checkbox</label>
-      <div id="rich-editor" contenteditable="true">edit me</div>
-      <div id="context-menu-zone">Right-click here</div>
-      <button id="add-element" type="button">Add element</button>
-      <button id="remove-element" type="button">Remove element</button>
-      <div id="dynamic-container"></div>
-      <div id="tab-trap">
-        <span class="tab-stop" tabindex="0" data-tab="first">First</span>
-        <span class="tab-stop" tabindex="0" data-tab="second">Second</span>
-        <span class="tab-stop" tabindex="0" data-tab="third">Third</span>
+
+      <div class="card">
+        <button id="click-button" class="btn-primary" aria-label="Increment counter">Click counter</button>
+        <span id="click-count">0</span>
+        <button class="duplicate-action" type="button">Duplicate action</button>
+        <button class="duplicate-action" type="button">Duplicate action</button>
+        <a id="nav-link" href="/nav-target" style="margin-left:8px">Go to nav target</a>
       </div>
+
+      <div class="card-row">
+        <div>
+          <h2>Pointer &amp; Mouse</h2>
+          <div class="card">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <div id="hover-zone" class="zone">Hover zone</div>
+              <div id="context-menu-zone" class="zone">Right-click here</div>
+            </div>
+            <div class="drag-row" style="margin-top:4px">
+              <div id="drag-source" class="zone">Drag source</div>
+              <span class="drag-arrow">&rarr;</span>
+              <div id="drag-target" class="zone">Drag target</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h2>HTML5 Drag &amp; Drop</h2>
+          <div class="card">
+            <div class="dnd-row">
+              <div id="dnd-source" draggable="true">Drag me</div>
+              <span class="drag-arrow">&rarr;</span>
+              <div id="dnd-target">Drop here</div>
+            </div>
+            <div id="dnd-status">Awaiting drag</div>
+          </div>
+          <h2>Pointer Events</h2>
+          <div class="card">
+            <div id="pointer-area">
+              <span class="pointer-label">Move pointer here</span>
+              <div class="pointer-indicator"></div>
+            </div>
+            <div id="pointer-log">No events</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div>
+          <h2>Form Inputs</h2>
+          <div class="card">
+            <div class="form-cols">
+              <label><span>Text input</span><input id="text-input" value="initial"></label>
+              <label><span>Append input</span><input id="append-input" value="base"></label>
+            </div>
+            <label><span>Text area</span><textarea id="text-area">seed</textarea></label>
+            <div class="form-row">
+              <label style="flex:1;max-width:160px"><span>Dropdown</span><select id="dropdown">
+                <option value="alpha">Alpha</option>
+                <option value="beta">Beta</option>
+                <option value="gamma">Gamma</option>
+              </select></label>
+              <label style="margin-bottom:0"><input type="checkbox" id="checkbox"> Toggle</label>
+            </div>
+            <label><span>File input</span><input id="file-input" type="file" multiple></label>
+            <div id="file-name"></div>
+            <div id="key-log"></div>
+          </div>
+        </div>
+        <div>
+          <h2>Rich Text &amp; Dynamic DOM</h2>
+          <div class="card">
+            <label><span>Content editable</span><div id="rich-editor" contenteditable="true">edit me</div></label>
+            <div class="dynamic-actions">
+              <button id="add-element" type="button">Add element</button>
+              <button id="remove-element" type="button">Remove element</button>
+            </div>
+            <div id="dynamic-container"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-row">
+        <div>
+          <h2>Canvas Drawing</h2>
+          <div class="card">
+            <canvas id="draw-canvas" width="300" height="150"></canvas>
+          </div>
+        </div>
+        <div>
+          <h2>Advanced</h2>
+          <div class="card">
+            <div class="form-cols">
+              <label><span>Email</span><input id="email-input" type="email" value="old@example.com"></label>
+              <label><span>Number</span><input id="number-input" type="number" value="123"></label>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px"><span style="margin:0">Controlled</span><input id="controlled-input" type="text" style="flex:1;max-width:160px"><span id="controlled-state"></span></label>
+            <div id="tab-trap">
+              <span class="tab-stop" tabindex="0" data-tab="first">First</span>
+              <span class="tab-stop" tabindex="0" data-tab="second">Second</span>
+              <span class="tab-stop" tabindex="0" data-tab="third">Third</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="delayed">Delayed element</div>
-      <div id="never-visible" style="display:none">Never visible</div>
+      <div id="never-visible">Never visible</div>
       <iframe id="fixture-frame" src="/frame.html"></iframe>
       <div id="inner-scroll"><div id="inner-scroll-content">Inner scroll marker</div></div>
       <section id="scroll-area"><div id="bottom-marker">Bottom marker</div></section>
-      <label>Email input <input id="email-input" type="email" value="old@example.com"></label>
-      <label>Number input <input id="number-input" type="number" value="123"></label>
-      <label>Controlled input <input id="controlled-input" type="text"></label>
-      <span id="controlled-state"></span>
-      ${kind === "frame" ? '<div id="iframe-marker" data-iframe="true" style="border:2px solid #44f;padding:8px;margin-top:8px;">iframe target</div>' : ""}
+
+      ${kind === "frame" ? '<div id="iframe-marker" data-iframe="true" style="border:2px solid var(--accent);padding:4px 8px;margin-top:4px;border-radius:4px;font-size:0.8rem">iframe target</div>' : ""}
     </main>
     <script>
       window.__fixtureState = {
@@ -305,23 +515,31 @@ function pageHtml(kind) {
         checkboxChecked: false,
         dropdownValue: "alpha",
         valueEvents: {},
+        canvasStrokes: 0,
+        canvasPoints: 0,
+        canvasDrawing: false,
+        canvasLastPoint: null,
+        /* HTML5 DnD */
+        dndDropped: false,
+        dndData: "",
+        /* Pointer Events API */
+        pointerEventTypes: [],
+        pointerDownCount: 0,
+        pointerMoveCount: 0,
+        lastPointerType: "",
+        lastPointerPressure: 0,
       };
+
+      /* ---- click / dblclick tracking ---- */
       const count = document.querySelector("#click-count");
       const clickButton = document.querySelector("#click-button");
       for (const type of ["mousemove", "mousedown", "mouseup", "click", "dblclick"]) {
-        document.addEventListener(
-          type,
-          (event) => {
-            window.__fixtureState.pointerEvents.push({
-              type,
-              target: event.target.id || event.target.tagName,
-              detail: event.detail,
-              x: event.clientX,
-              y: event.clientY,
-            });
-          },
-          true,
-        );
+        document.addEventListener(type, (event) => {
+          window.__fixtureState.pointerEvents.push({
+            type, target: event.target.id || event.target.tagName,
+            detail: event.detail, x: event.clientX, y: event.clientY,
+          });
+        }, true);
       }
       clickButton.addEventListener("click", (event) => {
         window.__fixtureState.clicks += 1;
@@ -332,43 +550,41 @@ function pageHtml(kind) {
         window.__fixtureState.doubleClicks += 1;
         window.__fixtureState.lastDoubleClickDetail = event.detail;
       });
+
+      /* ---- hover zone ---- */
       for (const type of ["mousemove", "mouseover"]) {
         document.querySelector("#hover-zone").addEventListener(type, () => {
           window.__fixtureState.hovered = true;
         });
       }
+
+      /* ---- mouse-based drag (legacy) ---- */
       let dragging = false;
-      document.querySelector("#drag-source").addEventListener("mousedown", () => {
-        dragging = true;
-      });
+      document.querySelector("#drag-source").addEventListener("mousedown", () => { dragging = true; });
       document.querySelector("#drag-target").addEventListener("mouseup", () => {
         if (dragging) window.__fixtureState.dragged = true;
         dragging = false;
       });
+
+      /* ---- keyboard tracking ---- */
       document.querySelector("#text-input").addEventListener("keydown", (event) => {
         window.__fixtureState.keys.push(event.key);
-        window.__fixtureState.keyEvents.push({
-          type: event.type,
-          key: event.key,
-          value: event.target.value,
-        });
+        window.__fixtureState.keyEvents.push({ type: event.type, key: event.key, value: event.target.value });
         document.querySelector("#key-log").textContent = window.__fixtureState.keys.join(",");
       });
       for (const type of ["beforeinput", "input", "keyup"]) {
         document.querySelector("#text-input").addEventListener(type, (event) => {
-          window.__fixtureState.keyEvents.push({
-            type,
-            key: event.key || event.inputType || "",
-            value: event.target.value,
-          });
+          window.__fixtureState.keyEvents.push({ type, key: event.key || event.inputType || "", value: event.target.value });
         });
       }
+
+      /* ---- file input ---- */
       document.querySelector("#file-input").addEventListener("change", (event) => {
         document.querySelector("#file-name").textContent =
           Array.from(event.target.files).map((file) => file.name).join(",");
       });
 
-      /* value inputs (email/number) — track input/change for fillInput regressions */
+      /* ---- value inputs (email/number) ---- */
       for (const id of ["email-input", "number-input"]) {
         const valueInput = document.querySelector("#" + id);
         for (const type of ["input", "change"]) {
@@ -378,39 +594,25 @@ function pageHtml(kind) {
         }
       }
 
-      /* react-style controlled input — every input event writes value back through
-         the native prototype setter, mirroring React/Vue controlled components.
-         Guards fillInput's persistence on inputs that fight back. */
+      /* ---- react-style controlled input ---- */
       (function () {
         const el = document.querySelector("#controlled-input");
         const stateEl = document.querySelector("#controlled-state");
-        const setter = Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype,
-          "value",
-        ).set;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
         let state = "";
-        function render() {
-          if (el.value !== state) setter.call(el, state);
-          stateEl.textContent = state;
-        }
-        el.addEventListener("input", () => {
-          state = el.value;
-          render();
-        });
-        el.addEventListener("change", () => {
-          stateEl.textContent = state + " (change)";
-        });
+        function render() { if (el.value !== state) setter.call(el, state); stateEl.textContent = state; }
+        el.addEventListener("input", () => { state = el.value; render(); });
+        el.addEventListener("change", () => { stateEl.textContent = state + " (change)"; });
         render();
       })();
 
-      /* context menu zone — captures right-click */
-      const contextZone = document.querySelector("#context-menu-zone");
-      contextZone.addEventListener("contextmenu", (event) => {
+      /* ---- context menu ---- */
+      document.querySelector("#context-menu-zone").addEventListener("contextmenu", (event) => {
         event.preventDefault();
         window.__fixtureState.rightClicked = true;
       });
 
-      /* dynamic DOM — add/remove elements */
+      /* ---- dynamic DOM ---- */
       document.querySelector("#add-element").addEventListener("click", () => {
         const container = document.querySelector("#dynamic-container");
         if (!document.querySelector("#dynamic-element")) {
@@ -418,41 +620,116 @@ function pageHtml(kind) {
           el.id = "dynamic-element";
           el.setAttribute("role", "status");
           el.textContent = "Dynamic!";
-          el.style.cssText = "background:#efe;border:1px solid #7a7;padding:4px 8px;";
+          el.style.cssText = "";
           container.appendChild(el);
           window.__fixtureState.dynamicElementExists = true;
         }
       });
       document.querySelector("#remove-element").addEventListener("click", () => {
         const el = document.querySelector("#dynamic-element");
-        if (el) {
-          el.remove();
-          window.__fixtureState.dynamicElementExists = false;
-        }
+        if (el) { el.remove(); window.__fixtureState.dynamicElementExists = false; }
       });
 
-      /* checkbox */
+      /* ---- checkbox / dropdown ---- */
       document.querySelector("#checkbox").addEventListener("change", (event) => {
         window.__fixtureState.checkboxChecked = event.target.checked;
       });
-
-      /* dropdown */
       document.querySelector("#dropdown").addEventListener("change", (event) => {
         window.__fixtureState.dropdownValue = event.target.value;
       });
 
-      /* tab-trap focus tracking */
+      /* ---- tab-trap focus tracking ---- */
       for (const stop of document.querySelectorAll(".tab-stop")) {
         stop.addEventListener("focus", () => {
           window.__fixtureState.tabOrder.push(stop.dataset.tab);
         });
       }
 
-      /* delayed element */
+      /* ---- delayed element ---- */
       setTimeout(() => {
         const delayed = document.querySelector("#delayed");
         delayed.style.display = "block";
       }, 350);
+
+      /* ---- canvas drawing ---- */
+      (function () {
+        const canvas = document.querySelector("#draw-canvas");
+        const ctx = canvas.getContext("2d");
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.lineCap = "round";
+        canvas.addEventListener("mousedown", (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = e.clientX - rect.left, y = e.clientY - rect.top;
+          ctx.beginPath(); ctx.moveTo(x, y);
+          window.__fixtureState.canvasDrawing = true;
+          window.__fixtureState.canvasStrokes++;
+          window.__fixtureState.canvasPoints++;
+          window.__fixtureState.canvasLastPoint = { x, y };
+        });
+        canvas.addEventListener("mousemove", (e) => {
+          if (!window.__fixtureState.canvasDrawing) return;
+          const rect = canvas.getBoundingClientRect();
+          const x = e.clientX - rect.left, y = e.clientY - rect.top;
+          ctx.lineTo(x, y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(x, y);
+          window.__fixtureState.canvasPoints++;
+          window.__fixtureState.canvasLastPoint = { x, y };
+        });
+        canvas.addEventListener("mouseup", () => { window.__fixtureState.canvasDrawing = false; });
+      })();
+
+      /* ---- HTML5 Drag and Drop ---- */
+      (function () {
+        const source = document.querySelector("#dnd-source");
+        const target = document.querySelector("#dnd-target");
+        const status = document.querySelector("#dnd-status");
+        source.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", "dnd-payload");
+          e.dataTransfer.effectAllowed = "move";
+          status.textContent = "Dragging...";
+        });
+        target.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          target.classList.add("drag-over");
+        });
+        target.addEventListener("dragleave", () => { target.classList.remove("drag-over"); });
+        target.addEventListener("drop", (e) => {
+          e.preventDefault();
+          target.classList.remove("drag-over");
+          const data = e.dataTransfer.getData("text/plain");
+          window.__fixtureState.dndDropped = true;
+          window.__fixtureState.dndData = data;
+          status.textContent = "Dropped: " + data;
+          target.textContent = "Dropped!";
+        });
+        source.addEventListener("dragend", () => {
+          if (!window.__fixtureState.dndDropped) status.textContent = "Drag cancelled";
+        });
+      })();
+
+      /* ---- Pointer Events API ---- */
+      (function () {
+        const area = document.querySelector("#pointer-area");
+        const indicator = area.querySelector(".pointer-indicator");
+        const log = document.querySelector("#pointer-log");
+        for (const type of ["pointerdown", "pointermove", "pointerup", "pointerenter", "pointerleave", "pointercancel"]) {
+          area.addEventListener(type, (e) => {
+            window.__fixtureState.pointerEventTypes.push(type);
+            if (type === "pointerdown") window.__fixtureState.pointerDownCount++;
+            if (type === "pointermove") {
+              window.__fixtureState.pointerMoveCount++;
+              const rect = area.getBoundingClientRect();
+              indicator.style.left = (e.clientX - rect.left) + "px";
+              indicator.style.top = (e.clientY - rect.top) + "px";
+              indicator.style.opacity = "1";
+            }
+            if (type === "pointerleave") indicator.style.opacity = "0";
+            window.__fixtureState.lastPointerType = e.pointerType;
+            window.__fixtureState.lastPointerPressure = e.pressure;
+            log.textContent = type + " (" + e.pointerType + ") p=" + e.pressure.toFixed(2);
+          });
+        }
+      })();
     </script>
   </body>
 </html>`;

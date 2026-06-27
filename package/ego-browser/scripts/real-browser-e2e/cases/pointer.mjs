@@ -1,11 +1,10 @@
-export function pointerCase() {
+export function pointerClickCase() {
   return `
     await useOrCreateTaskSpace(taskName);
     await resetHome();
-    cliLog(JSON.stringify({ pointerStep: "ready" }));
+    cliLog(JSON.stringify({ pointerStep: "click ready" }));
 
     assertEqual(await js("return window.__fixtureState.clicks"), 0, "click fixture starts at zero");
-    cliLog(JSON.stringify({ pointerStep: "click css" }));
     await click("#click-button", { label: "click helper e2e" });
     await waitForJsValue(
       "window.__fixtureState.clicks",
@@ -13,10 +12,8 @@ export function pointerCase() {
       "click css fires a page click",
       "window.__fixtureState.pointerEvents"
     );
-    cliLog(JSON.stringify({ pointerStep: "click selector offset" }));
     await click({ selector: "#click-button", x: 12, y: 12 });
     await waitForJsValue("window.__fixtureState.clicks", 2, "click selector offset fires a page click");
-    cliLog(JSON.stringify({ pointerStep: "click locators" }));
     await click("loc=css:#click-button");
     await waitForJsValue("window.__fixtureState.clicks", 3, "click loc css fires a page click");
     await click("loc=role:button[name='Increment counter']");
@@ -24,6 +21,18 @@ export function pointerCase() {
     await click("xpath=//*[@id='click-button']");
     await waitForJsValue("window.__fixtureState.clicks", 5, "click xpath fires a page click");
     const buttonCenter = await elementCenter("#click-button");
+    const hitElement = await js(
+      "return document.elementFromPoint(" +
+        JSON.stringify(buttonCenter.x) +
+        "," +
+        JSON.stringify(buttonCenter.y) +
+        ")?.id || document.elementFromPoint(" +
+        JSON.stringify(buttonCenter.x) +
+        "," +
+        JSON.stringify(buttonCenter.y) +
+        ")?.className || ''"
+    );
+    assertEqual(hitElement, "click-button", "pointer coordinates resolve to the intended button");
     await click([buttonCenter.x, buttonCenter.y]);
     await waitForJsValue("window.__fixtureState.clicks", 6, "click tuple coordinates fires a page click");
     await click({ x: buttonCenter.x, y: buttonCenter.y });
@@ -39,20 +48,14 @@ export function pointerCase() {
       "window.__fixtureState.doubleClicks > " + JSON.stringify(doubleClicksBefore),
       "doubleClick fires a DOM dblclick"
     );
-    cliLog(JSON.stringify({ pointerStep: "hover" }));
-    await wait(0.1);
-    const hitElement = await js(
-      "return document.elementFromPoint(" +
-        JSON.stringify(buttonCenter.x) +
-        "," +
-        JSON.stringify(buttonCenter.y) +
-        ")?.id || document.elementFromPoint(" +
-        JSON.stringify(buttonCenter.x) +
-        "," +
-        JSON.stringify(buttonCenter.y) +
-        ")?.className || ''"
-    );
-    assertEqual(hitElement, "click-button", "pointer coordinates resolve to the intended button");
+  `;
+}
+
+export function pointerHoverDragCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
+    cliLog(JSON.stringify({ pointerStep: "hover drag ready" }));
 
     await js("window.__fixtureState.hovered = false; return true;");
     await hover("#hover-zone");
@@ -61,12 +64,18 @@ export function pointerCase() {
     await hover({ selector: "#hover-zone" });
     await waitForJsValue("window.__fixtureState.hovered", true, "hover selector object fires mouseover");
 
-    cliLog(JSON.stringify({ pointerStep: "drag" }));
     await js("window.__fixtureState.dragged = false; return true;");
     await dragMouse(["#drag-source", "#drag-target"], { delayMs: 10 });
     await waitForJsValue("window.__fixtureState.dragged", true, "dragMouse fires drag source and target events");
+  `;
+}
 
-    cliLog(JSON.stringify({ pointerStep: "nested scroll" }));
+export function scrollHelpersCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
+    cliLog(JSON.stringify({ pointerStep: "scroll ready" }));
+
     await js(
       "const inner = document.querySelector('#inner-scroll');" +
         "inner.scrollTop = 0;" +
@@ -95,7 +104,6 @@ export function pointerCase() {
       );
     }
 
-    cliLog(JSON.stringify({ pointerStep: "page wheel" }));
     await resetHome();
     const wheelPoint = await js(
       "const rect = document.querySelector('#scroll-area').getBoundingClientRect();" +
@@ -132,7 +140,6 @@ export function pointerCase() {
       assert(afterObjectWheel.sy > beforeObjectWheel.sy, "scroll object options move the page down");
     }
 
-    cliLog(JSON.stringify({ pointerStep: "dom scroll helpers" }));
     await resetHome();
     const beforeBy = await pageInfo();
     const by = await scrollBy({ dy: 450 });
@@ -175,6 +182,13 @@ export function pointerCase() {
       wait: 0,
     });
     assertEqual(immediateCondition.reason, "condition", "scrollToBottomUntil accepts immediate string condition");
+  `;
+}
+
+export function pointerValidationCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
 
     await assertRejects(
       () => dragMouse(["#drag-source"]),
@@ -206,9 +220,15 @@ export function pointerCase() {
       "function or string",
       "scrollToBottomUntil validates condition type"
     );
+  `;
+}
 
-    /* right-click — CDP dispatches mousedown with button=right; contextmenu synthesis is browser-dependent */
-    cliLog(JSON.stringify({ pointerStep: "right click" }));
+export function pointerInteractionRegressionCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
+    cliLog(JSON.stringify({ pointerStep: "interaction regression ready" }));
+
     const rightClickBefore = await js("return window.__fixtureState.pointerEvents.length");
     await click("#context-menu-zone", { button: "right" });
     const rightClickAfter = await js("return window.__fixtureState.pointerEvents.length");
@@ -218,8 +238,6 @@ export function pointerCase() {
     );
     assert(rightMouseDown, "right-click produces a mousedown event on the context-menu-zone");
 
-    /* rapid clicks — probe cleanup between actions */
-    cliLog(JSON.stringify({ pointerStep: "rapid clicks" }));
     await resetHome();
     const clicksBefore = await js("return window.__fixtureState.clicks");
     await click("#click-button");
@@ -234,8 +252,6 @@ export function pointerCase() {
       "window.__fixtureState.pointerEvents"
     );
 
-    /* checkbox toggle */
-    cliLog(JSON.stringify({ pointerStep: "checkbox" }));
     await js("document.querySelector('#checkbox').checked = false; window.__fixtureState.checkboxChecked = false; return true;");
     await click("#checkbox");
     await waitForJsValue("window.__fixtureState.checkboxChecked", true, "first click checks the checkbox");
