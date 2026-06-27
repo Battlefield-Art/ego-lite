@@ -5,6 +5,7 @@ export function runCommand(command, args, options = {}) {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    const echo = options.echo !== false;
     const child = spawn(command, args, {
       cwd: options.cwd ?? process.cwd(),
       env: process.env,
@@ -37,11 +38,11 @@ export function runCommand(command, args, options = {}) {
     });
     child.stdout?.on("data", (chunk) => {
       stdout += chunk;
-      process.stdout.write(chunk);
+      if (echo) process.stdout.write(chunk);
     });
     child.stderr?.on("data", (chunk) => {
       stderr += chunk;
-      process.stderr.write(chunk);
+      if (echo) process.stderr.write(chunk);
     });
     child.on("close", (code) => {
       if (settled) return;

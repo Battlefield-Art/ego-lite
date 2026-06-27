@@ -17,7 +17,7 @@ export function environmentCase() {
     assertEqual(task.name, taskName, "environment creates/selects isolated task space");
 
     let home = await resetHome();
-    assert(home.targetId, "environment opens a real fixture tab");
+    assert(typeof home.targetId === "string" && home.targetId.length > 0, "environment opens a real fixture tab with valid targetId");
 
     const info = await pageInfo();
     assertEqual(info.title, "ego-lite helper e2e", "environment page title is stable");

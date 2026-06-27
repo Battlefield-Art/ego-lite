@@ -1,6 +1,6 @@
 export function observationCase() {
   return `
-    await switchTaskSpace(taskName);
+    await useOrCreateTaskSpace(taskName);
     await resetHome();
 
     const raw = await snapshotRaw({ includeStableLocator: true });
@@ -84,7 +84,10 @@ export function observationCase() {
 
     const screenshotPath = await captureScreenshot(undefined, { full: false });
     const screenshotStat = await stat(screenshotPath);
-    assert(screenshotStat.size > 0, "captureScreenshot writes a non-empty png");
+    assert(screenshotStat.size > 100, "captureScreenshot writes a non-trivial png");
+    const screenshotBuf = await readFile(screenshotPath);
+    assertEqual(screenshotBuf[0], 137, "screenshot starts with PNG magic byte 137");
+    assertEqual(screenshotBuf[1], 80, "screenshot has PNG header byte P (80)");
 
     const explicitPath = await captureScreenshot(explicitScreenshotPath, { full: false });
     assertEqual(explicitPath, explicitScreenshotPath, "captureScreenshot returns explicit path");
