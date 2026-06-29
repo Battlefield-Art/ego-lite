@@ -66,11 +66,11 @@ src/
   element-resolver.ts    resolves @eN / CSS / XPath / ARIA targets
   driver/
     pointer.ts           click, hover, drag, scroll, scrollBy
-    observe.ts           snapshot, captureScreenshot, elementCenter
-    keyboard.ts          insertText, pressKey, fillInput, dispatchKey
-    nav.ts               tabs, gotoUrl, openOrReuseTab, closeTab
-    load.ts              waitForLoad and load orchestration
-    waits.ts             waitForElement, waitForNetworkIdle, wait
+    observe.ts           snapshot, screenshot, elementCenter
+    keyboard.ts          insertText, press, fill, dispatchKey
+    nav.ts               tabs, goto, openOrReuseTab, closeTab
+    load.ts              waitForDocumentLoad and load orchestration
+    waits.ts             waitForTimeout, waitForLoadState, waitForSelector
     files.ts             setInputFiles
   http.ts                serverFetch, browserFetch
   cdp-eval.ts            cdp() and evaluate() raw eval

@@ -78,6 +78,41 @@ test("press does not map modified Command+A variants to selectAll", async () => 
   assert.equal(calls[0].params.commands, undefined);
 });
 
+test("press parses a literal plus key with modifiers (Shift++)", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      return {};
+    },
+  });
+  try {
+    await press("Shift++");
+  } finally {
+    restore();
+  }
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].params, {
+    type: "keyDown",
+    key: "+",
+    code: "+",
+    modifiers: 8,
+    windowsVirtualKeyCode: 43,
+    nativeVirtualKeyCode: 43,
+    text: "+",
+    unmodifiedText: "+",
+  });
+  assert.deepEqual(calls[1].params, {
+    type: "keyUp",
+    key: "+",
+    code: "+",
+    modifiers: 8,
+    windowsVirtualKeyCode: 43,
+    nativeVirtualKeyCode: 43,
+  });
+});
+
 test("press leaves ordinary printable keys unchanged", async () => {
   const calls = [];
   const restore = setOverrides({

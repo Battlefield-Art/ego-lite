@@ -77,7 +77,13 @@ function parseKeyCombo(combo: string) {
   const parts = combo.split("+");
   let key = parts.pop() ?? combo;
   if (key === "" && parts.length > 0) {
-    key = "+"; // a trailing "+" means the literal plus key, e.g. "Shift++"
+    // A trailing "+" denotes the literal plus key, e.g. "+", "Shift++". split()
+    // turns that "+" into two empty segments; the pop above consumed one, so
+    // drop the remaining empty slot too instead of reading it as a modifier.
+    key = "+";
+    if (parts[parts.length - 1] === "") {
+      parts.pop();
+    }
   }
   let modifiers = 0;
   for (const name of parts) {

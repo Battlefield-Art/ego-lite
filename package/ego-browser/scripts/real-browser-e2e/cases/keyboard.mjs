@@ -12,7 +12,7 @@ export function keyboardCase() {
     assertEqual(areaValue, "area text", "fill supports textarea through loc=css");
 
     await evaluate("const el = document.querySelector('#append-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
-    await fill("#append-input", "-suffix", { clearFirst: false, timeout: 3 });
+    await fill("#append-input", "-suffix", { clearFirst: false, timeout: 3000 });
     const appended = await evaluate("return document.querySelector('#append-input').value");
     assertEqual(appended, "base-suffix", "fill clearFirst:false preserves existing input value");
 

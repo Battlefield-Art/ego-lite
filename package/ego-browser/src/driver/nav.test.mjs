@@ -9,6 +9,7 @@ import {
 import {
   listTabs,
   newTab,
+  openOrReuseTab,
   pageInfo,
   closeTab,
 } from "../../dist/src/driver/nav.js";
@@ -136,6 +137,42 @@ test("newTab throws when the binding returns no targetId", async () => {
       );
     },
   );
+});
+
+test("openOrReuseTab settles a newly opened tab in milliseconds, not seconds", async () => {
+  // Regression: the new-tab branch used to sleep(settle * 1000), so settle:500
+  // (documented as 500ms) blocked for 500 seconds while the reuse branch
+  // already treated it as milliseconds.
+  const sleeps = [];
+  await withEgo(
+    {
+      async listTabs() {
+        return { tabs: [] }; // no match → open a new tab
+      },
+      async createTab() {
+        return { targetId: "target-new" };
+      },
+    },
+    async () => {
+      const restore = setOverrides({
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      });
+      try {
+        const opened = await openOrReuseTab("https://example.com/fresh", {
+          wait: false,
+          settle: 500,
+        });
+        assert.equal(opened.reused, false);
+        assert.equal(opened.targetId, "target-new");
+      } finally {
+        restore();
+      }
+    },
+  );
+
+  assert.deepEqual(sleeps, [500]);
 });
 
 test("closeTab closes an explicit target and returns its id", async () => {

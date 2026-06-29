@@ -62,7 +62,13 @@ export async function goto(url: string, options: GotoOptions = {}) {
   const loaded =
     options.waitUntil === "commit"
       ? false
-      : await waitForDocumentLoad({ timeout: options.timeout ?? 20000 });
+      : await waitForDocumentLoad({
+          timeout: options.timeout ?? 20000,
+          until:
+            options.waitUntil === "domcontentloaded"
+              ? "domcontentloaded"
+              : "load",
+        });
   const settle = Number(options.settle ?? 0);
   if (settle > 0) {
     await state.sleep(settle);
@@ -184,7 +190,7 @@ export async function openOrReuseTab(
   }
   const settle = Number(options.settle ?? 0);
   if (settle > 0) {
-    await state.sleep(settle * 1000);
+    await state.sleep(settle);
   }
   return { targetId, url, title: "", active: true, reused: false };
 }

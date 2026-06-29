@@ -26,7 +26,8 @@ export async function waitForTimeout(ms = 1000) {
 
 /**
  * Wait for a page load state. `"networkidle"` waits until network traffic goes
- * idle; any other state waits until document.readyState is complete.
+ * idle; `"domcontentloaded"` until the DOM is interactive; otherwise until
+ * document.readyState is complete.
  * @param {"load"|"domcontentloaded"|"networkidle"} [loadState="load"] Load state to wait for.
  * @param {{timeout?: number, idleMs?: number}} [options] timeout in milliseconds; idleMs only applies to "networkidle".
  * @returns {Promise<boolean>} True when the state was reached before timeout.
@@ -38,7 +39,10 @@ export async function waitForLoadState(
   if (loadState === "networkidle") {
     return waitForNetworkIdle(options);
   }
-  return waitForDocumentLoad({ timeout: options.timeout });
+  return waitForDocumentLoad({
+    timeout: options.timeout,
+    until: loadState === "domcontentloaded" ? "domcontentloaded" : "load",
+  });
 }
 
 /**
