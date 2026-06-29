@@ -478,9 +478,11 @@ async function isVisibleAndFocused() {
 }
 
 /**
- * Dispatch a synthetic WheelEvent on the element under (x, y). Used when the tab
- * is backgrounded/unfocused and CDP wheel input would be dropped. Triggers page
- * wheel handlers (virtualized lists, custom scrollers).
+ * Dispatch a synthetic WheelEvent on the element under (x, y), then perform the
+ * native scroll. Used when the tab is backgrounded/unfocused and CDP wheel input
+ * would be dropped. The WheelEvent triggers page wheel handlers (virtualized
+ * lists, custom scrollers); the window.scrollBy actually moves an ordinary page,
+ * since an untrusted WheelEvent does not perform the default scroll action.
  */
 async function dispatchSyntheticWheel(
   x: number,
@@ -500,6 +502,7 @@ async function dispatchSyntheticWheel(
       clientX: ${JSON.stringify(x)},
       clientY: ${JSON.stringify(y)}
     }));
+    window.scrollBy(${JSON.stringify(deltaX)}, ${JSON.stringify(deltaY)});
   })()`);
 }
 
