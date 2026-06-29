@@ -1,13 +1,13 @@
 /**
  * Output sink for the agent-facing heredoc runtime.
  *
- * `cliLog` is the only channel an agent reads. A single user takeover turns that
- * channel into noise: while the user holds control, every browser command re-reports
- * the same hard-stop error, so a script that loops over work and swallows each error
- * (try/catch, `.catch()`) prints the same guidance on every iteration, buried under
- * its own business logging and success rows.
+ * `console.log` is the only channel an agent reads (the runtime routes it here). A
+ * single user takeover turns that channel into noise: while the user holds control,
+ * every browser command re-reports the same hard-stop error, so a script that loops
+ * over work and swallows each error (try/catch, `.catch()`) prints the same guidance
+ * on every iteration, buried under its own business logging and success rows.
  *
- * To collapse that to one clean line we buffer cliLog output instead of writing it
+ * To collapse that to one clean line we buffer console.log output instead of writing it
  * straight through. When a hard-stop error is born (see `buildEgoError`) we record its
  * owned message once. At the end of the run we either:
  *   - a hard stop occurred -> discard the whole buffer and emit the owned message once
@@ -26,7 +26,7 @@ let hardStopMessage: string | null = null;
 let flushed = false;
 let lifecycleHooked = false;
 
-/** Buffer one already-formatted cliLog chunk (the trailing newline is included). */
+/** Buffer one already-formatted console.log chunk (the trailing newline is included). */
 export function bufferOutput(chunk: string): void {
   buffer.push(chunk);
 }

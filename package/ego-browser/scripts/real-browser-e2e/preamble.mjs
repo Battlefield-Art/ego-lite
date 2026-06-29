@@ -19,7 +19,7 @@ function formatAssertionValue(value) {
 
 function logAssertion(status, message, details = {}) {
   if (!verboseAssertions) return;
-  cliLog(
+  console.log(
     JSON.stringify({
       assertion: {
         status,
@@ -193,7 +193,7 @@ async function allowWheelDispatch(label, fn) {
         message,
       )
     ) {
-      cliLog(JSON.stringify({ inputDispatchWarning: { label, message } }));
+      console.log(JSON.stringify({ inputDispatchWarning: { label, message } }));
       return false;
     }
     throw error;

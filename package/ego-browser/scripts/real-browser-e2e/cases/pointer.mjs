@@ -2,7 +2,7 @@ export function pointerClickCase() {
   return `
     await useOrCreateTaskSpace(taskName);
     await resetHome();
-    cliLog(JSON.stringify({ pointerStep: "click ready" }));
+    console.log(JSON.stringify({ pointerStep: "click ready" }));
 
     assertEqual(await evaluate("return window.__fixtureState.clicks"), 0, "click fixture starts at zero");
     await click("#click-button", { label: "click helper e2e" });
@@ -55,7 +55,7 @@ export function pointerHoverDragCase() {
   return `
     await useOrCreateTaskSpace(taskName);
     await resetHome();
-    cliLog(JSON.stringify({ pointerStep: "hover drag ready" }));
+    console.log(JSON.stringify({ pointerStep: "hover drag ready" }));
 
     await evaluate("window.__fixtureState.hovered = false; return true;");
     await hover("#hover-zone");
@@ -74,7 +74,14 @@ export function scrollHelpersCase() {
   return `
     await useOrCreateTaskSpace(taskName);
     await resetHome();
-    cliLog(JSON.stringify({ pointerStep: "scroll ready" }));
+    console.log(JSON.stringify({ pointerStep: "scroll ready" }));
+
+    // wheel() routes through CDP only while the tab is visible AND focused; an
+    // unfocused tab falls back to a synthetic WheelEvent that does not move native
+    // scrollbars, so gate the native-scroll assertions on the CDP path.
+    const wheelUsesCdp = await evaluate(
+      "return document.visibilityState === 'visible' && document.hasFocus();"
+    );
 
     await evaluate(
       "const inner = document.querySelector('#inner-scroll');" +
@@ -94,13 +101,13 @@ export function scrollHelpersCase() {
     );
     assertEqual(innerHit, "inner-scroll", "nested scroll container is under the wheel target");
     const innerWheelDispatched = await allowWheelDispatch(
-      "scroll nested container",
-      () => scroll(innerCenter.x, innerCenter.y, { dy: 350 })
+      "wheel nested container",
+      () => wheel(0, 350, { x: innerCenter.x, y: innerCenter.y })
     );
-    if (innerWheelDispatched) {
+    if (wheelUsesCdp && innerWheelDispatched) {
       await waitForJsCondition(
         "document.querySelector('#inner-scroll').scrollTop > 0",
-        "scroll targets nested scroll containers"
+        "wheel targets nested scroll containers"
       );
     }
 
@@ -110,78 +117,30 @@ export function scrollHelpersCase() {
         "return { x: Math.min(Math.max(rect.left + 20, 10), innerWidth - 10), y: Math.min(Math.max(rect.top + 20, 10), innerHeight - 10) };"
     );
     const beforeWheel = await pageInfo();
-    const wheelDispatched = await allowWheelDispatch("scroll wheel", () =>
-      scroll(wheelPoint.x, wheelPoint.y, { dy: 300 })
+    const wheelDispatched = await allowWheelDispatch("wheel page", () =>
+      wheel(0, 300, { x: wheelPoint.x, y: wheelPoint.y })
     );
-    if (wheelDispatched) {
+    if (wheelUsesCdp && wheelDispatched) {
       await waitForJsCondition(
         "scrollY > " + JSON.stringify(beforeWheel.sy),
-        "scroll wheel moves the page down"
+        "wheel moves the page down"
       );
       const afterWheel = await pageInfo();
-      assert(afterWheel.sy > beforeWheel.sy, "scroll wheel moves the page down");
+      assert(afterWheel.sy > beforeWheel.sy, "wheel moves the page down");
     }
 
+    // scrollIntoViewIfNeeded scrolls through the DOM, so it reveals an element
+    // regardless of tab focus.
     await resetHome();
-    const objectWheelPoint = await evaluate(
-      "const rect = document.querySelector('#scroll-area').getBoundingClientRect();" +
-        "return { x: Math.min(Math.max(rect.left + 30, 10), innerWidth - 10), y: Math.min(Math.max(rect.top + 30, 10), innerHeight - 10) };"
+    const markerBefore = await evaluate(
+      "return document.querySelector('#bottom-marker').getBoundingClientRect().top >= innerHeight;"
     );
-    const beforeObjectWheel = await pageInfo();
-    const objectWheelDispatched = await allowWheelDispatch("scroll object options", () =>
-      scroll({ x: objectWheelPoint.x, y: objectWheelPoint.y, dy: 120 })
-    );
-    if (objectWheelDispatched) {
-      await waitForJsCondition(
-        "scrollY > " + JSON.stringify(beforeObjectWheel.sy),
-        "scroll object options move the page down"
-      );
-      const afterObjectWheel = await pageInfo();
-      assert(afterObjectWheel.sy > beforeObjectWheel.sy, "scroll object options move the page down");
-    }
-
-    await resetHome();
-    const beforeBy = await pageInfo();
-    const by = await scrollBy({ dy: 450 });
-    assert(by.y > beforeBy.sy, "scrollBy moves the page down and returns scroll position");
-    const byNumber = await scrollBy(120);
-    assert(byNumber.y > by.y, "scrollBy accepts numeric amount");
-    const byTop = await scrollBy({ top: -60 });
-    assert(byTop.y < byNumber.y && byTop.y >= 0, "scrollBy accepts top option");
-
-    const bottom = await scrollToBottomUntil(
+    assert(markerBefore, "bottom marker starts below the viewport");
+    await scrollIntoViewIfNeeded("#bottom-marker");
+    await waitForJsCondition(
       "document.querySelector('#bottom-marker').getBoundingClientRect().top < innerHeight",
-      { step: 700, maxSteps: 8, wait: 0.05 }
+      "scrollIntoViewIfNeeded reveals an off-screen element"
     );
-    assert(bottom.done || bottom.reason === "bottom", "scrollToBottomUntil terminates");
-
-    await resetHome();
-    const maxStep = await scrollToBottomUntil("false", {
-      step: 100,
-      maxSteps: 0,
-      wait: 0,
-    });
-    assertEqual(maxStep.reason, "maxSteps", "scrollToBottomUntil reports maxSteps");
-
-    const nullCondition = await scrollToBottomUntil(null, {
-      step: 100,
-      maxSteps: 0,
-      wait: 0,
-    });
-    assertEqual(nullCondition.reason, "maxSteps", "scrollToBottomUntil accepts null condition");
-
-    const functionCondition = await scrollToBottomUntil(
-      (state) => state.y > 100,
-      { step: 200, maxSteps: 5, wait: 0 }
-    );
-    assertEqual(functionCondition.reason, "condition", "scrollToBottomUntil accepts function condition");
-
-    const immediateCondition = await scrollToBottomUntil("true", {
-      step: 100,
-      maxSteps: 3,
-      wait: 0,
-    });
-    assertEqual(immediateCondition.reason, "condition", "scrollToBottomUntil accepts immediate string condition");
   `;
 }
 
@@ -211,14 +170,9 @@ export function pointerValidationCase() {
       "drag validates mouse buttons"
     );
     await assertRejects(
-      () => scrollBy({ dy: "bad" }),
+      () => wheel(0, 0, { x: "bad" }),
       "invalid mouse offset",
-      "scrollBy validates numeric offsets"
-    );
-    await assertRejects(
-      () => scrollToBottomUntil(42, { maxSteps: 0 }),
-      "function or string",
-      "scrollToBottomUntil validates condition type"
+      "wheel validates numeric viewport coordinates"
     );
   `;
 }
@@ -227,7 +181,7 @@ export function pointerInteractionRegressionCase() {
   return `
     await useOrCreateTaskSpace(taskName);
     await resetHome();
-    cliLog(JSON.stringify({ pointerStep: "interaction regression ready" }));
+    console.log(JSON.stringify({ pointerStep: "interaction regression ready" }));
 
     const rightClickBefore = await evaluate("return window.__fixtureState.pointerEvents.length");
     await click("#context-menu-zone", { button: "right" });

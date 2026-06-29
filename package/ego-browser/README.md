@@ -20,7 +20,7 @@ The build emits a single ESM file `dist/out/index.js`. The ego-browser browser d
 ego-browser nodejs <<'EOF'
 await useOrCreateTaskSpace('demo')
 await openOrReuseTab('https://example.com', { wait: true })
-cliLog(await snapshotText())
+console.log(await snapshotText())
 EOF
 ```
 
@@ -28,7 +28,7 @@ Local invocation without the browser (for debugging the helper bundle itself) re
 
 ```bash
 node dist/out/index.js <<'JS'
-cliLog(await pageInfo())
+console.log(await pageInfo())
 JS
 ```
 
@@ -46,7 +46,7 @@ Override with `EGO_BROWSER_AGENT_WORKSPACE`:
 
 ```bash
 EGO_BROWSER_AGENT_WORKSPACE=/path/to/skill ego-browser nodejs <<'EOF'
-cliLog(await siteSkills())
+console.log(await siteSkills())
 EOF
 ```
 
@@ -65,7 +65,7 @@ src/
   browser-runtime.ts     bridge to globalThis.ego (CDP, sessions, events)
   element-resolver.ts    resolves @eN / CSS / XPath / ARIA targets
   driver/
-    pointer.ts           click, hover, drag, scroll, scrollBy
+    pointer.ts           click, hover, drag, wheel, scrollIntoViewIfNeeded
     observe.ts           snapshot, screenshot, elementCenter
     keyboard.ts          insertText, press, fill, dispatchKey
     nav.ts               tabs, goto, openOrReuseTab, closeTab

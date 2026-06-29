@@ -71,7 +71,7 @@ export function keyboardCase() {
     );
 
     /* contentEditable typing */
-    cliLog(JSON.stringify({ keyboardStep: "contentEditable" }));
+    console.log(JSON.stringify({ keyboardStep: "contentEditable" }));
     await click("#rich-editor");
     await evaluate("document.querySelector('#rich-editor').focus(); document.querySelector('#rich-editor').textContent = ''; return true;");
     await insertText("hello world");
@@ -79,7 +79,7 @@ export function keyboardCase() {
     assertIncludes(editorText, "hello world", "insertText inserts text into contentEditable element");
 
     /* rapid Backspace sequence */
-    cliLog(JSON.stringify({ keyboardStep: "rapid backspace" }));
+    console.log(JSON.stringify({ keyboardStep: "rapid backspace" }));
     await fill("#text-input", "test", { timeout: 3000 });
     await evaluate("const el = document.querySelector('#text-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
     await press("Backspace");

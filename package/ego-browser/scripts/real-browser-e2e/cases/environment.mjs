@@ -40,7 +40,7 @@ export function environmentCase() {
       const browserVersion = await cdp("Browser.getVersion");
       assert(browserVersion.product || browserVersion.userAgent, "CDP Browser.getVersion returns capability data");
     } catch (error) {
-      cliLog(JSON.stringify({ capabilityWarning: { method: "Browser.getVersion", message: error?.message || String(error) } }));
+      console.log(JSON.stringify({ capabilityWarning: { method: "Browser.getVersion", message: error?.message || String(error) } }));
     }
 
     await fill("#text-input", "dirty", { timeout: 3000 });

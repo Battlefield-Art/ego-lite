@@ -42,7 +42,7 @@ Read the ego-browser skill for the default workflow and examples.
 Typical usage:
   ego-browser <<'JS'
   await waitForLoadState()
-  cliLog(await pageInfo())
+  console.log(await pageInfo())
   JS
 
 Helpers are pre-imported and the browser connection is prepared automatically.
@@ -54,7 +54,7 @@ Commands:
 
 export const USAGE = `Usage:
   ego-browser <<'JS'
-  cliLog(await pageInfo())
+  console.log(await pageInfo())
   JS
 `;
 
@@ -130,9 +130,11 @@ export async function executionContext() {
   // that installEgoSdk() exposes in the browser runtime, so the CLI and SDK paths
   // cannot drift apart (and `help` exists in both).
   const context: Record<string, any> = helpers.helperContext(agentHelpers);
-  context.cliLog = (...args: unknown[]) => {
-    // Buffer rather than write through; execute() flushes (or discards on hard stop)
-    // once the script settles. Keeps the CLI path identical to the SDK path.
+  // Route the agent's primary output channel (console.log) through the output sink:
+  // execute() flushes (or discards on hard stop) once the script settles, keeping the
+  // CLI path identical to the SDK path. console.error/warn are left untouched. Each
+  // heredoc runs in its own short-lived process, so overriding the global is per-run.
+  console.log = (...args: unknown[]) => {
     bufferOutput(`${args.map(formatCliLogValue).join(" ")}\n`);
   };
   return context;

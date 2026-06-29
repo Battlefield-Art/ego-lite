@@ -28,9 +28,8 @@ export {
   dblclick,
   hover,
   drag,
-  scroll,
-  scrollBy,
-  scrollToBottomUntil,
+  wheel,
+  scrollIntoViewIfNeeded,
 } from "./driver/pointer.js";
 export { press, insertText, fill, dispatchKey } from "./driver/keyboard.js";
 export {

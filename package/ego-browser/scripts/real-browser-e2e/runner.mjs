@@ -70,7 +70,7 @@ export async function runRealBrowserE2e() {
         egoType: typeof globalThis.ego,
         hasSendCDPMessage: typeof globalThis.ego?.sendCDPMessage,
         processVersion: process.version,
-        cliLogType: typeof globalThis.cliLog,
+        consoleLogType: typeof globalThis.console?.log,
         helperCount: Object.keys(globalThis.ego?.helpers || {}).length
       }));
     `;
@@ -90,7 +90,7 @@ export async function runRealBrowserE2e() {
       if (
         probe.egoType !== "object" ||
         probe.hasSendCDPMessage !== "function" ||
-        probe.cliLogType !== "function" ||
+        probe.consoleLogType !== "function" ||
         typeof probe.processVersion !== "string" ||
         probe.helperCount <= 0
       ) {
@@ -180,7 +180,7 @@ export async function runRealBrowserE2e() {
       `
         try {
           const result = await completeTaskSpace(taskName, { keep: keepTaskSpace });
-          cliLog(JSON.stringify({ cleanup: result }));
+          console.log(JSON.stringify({ cleanup: result }));
         } catch (error) {
           if (!String(error?.message || error).includes("task space not found")) {
             throw error;
@@ -375,7 +375,7 @@ async function readCaseResult(tempDir, stdout) {
 
 function extractAssertionCount(stdout) {
   if (!stdout) return 0;
-  // Find the last JSON line with "assertions" from cliLog output
+  // Find the last JSON line with "assertions" from console.log output
   const lines = stdout.split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();

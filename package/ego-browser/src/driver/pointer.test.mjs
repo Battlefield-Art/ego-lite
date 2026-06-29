@@ -2,7 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { setOverrides } from "../../dist/src/state.js";
-import { click, scroll } from "../../dist/src/driver/pointer.js";
+import { click, wheel } from "../../dist/src/driver/pointer.js";
+
+function visibleAndFocused(value) {
+  return (method, params) => {
+    if (
+      method === "Runtime.evaluate" &&
+      params.expression.includes("visibilityState")
+    ) {
+      return { result: { value } };
+    }
+    return {};
+  };
+}
 
 test("click resolves selector offsets without the public elementEval helper", async () => {
   const calls = [];
@@ -66,95 +78,97 @@ test("click resolves selector offsets without the public elementEval helper", as
   );
 });
 
-test("scroll defaults to scrolling down (positive deltaY, DOM wheel convention)", async () => {
-  // Regression: the default used to be deltaY -300, which scrolls UP — CDP
-  // negates wheel deltas internally, so the DOM convention (positive = down)
-  // applies end to end. SKILL.md documents scroll({ dy: 900 }) as a downward
-  // scroll, matching scrollBy / scrollToBottomUntil.
+test("wheel defaults to scrolling down (positive deltaY) via CDP when visible and focused", async () => {
+  // CDP negates wheel deltas internally, so the DOM convention (positive = down)
+  // applies end to end — matching Playwright's mouse.wheel(deltaX, deltaY).
   const calls = [];
+  const probe = visibleAndFocused(true);
   const restore = setOverrides({
     cdpOverride(method, params) {
       calls.push({ method, params });
-      return {};
+      return probe(method, params);
     },
   });
   try {
-    await scroll();
+    await wheel();
   } finally {
     restore();
   }
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].method, "Input.dispatchMouseEvent");
-  assert.equal(calls[0].params.deltaY, 300);
-  assert.equal(calls[0].params.deltaX, 0);
+  const dispatch = calls.find((c) => c.method === "Input.dispatchMouseEvent");
+  assert.ok(dispatch, "dispatches a CDP wheel event");
+  assert.deepEqual(dispatch.params, {
+    type: "mouseWheel",
+    x: 0,
+    y: 0,
+    deltaX: 0,
+    deltaY: 300,
+  });
 });
 
-test("scroll falls back to DOM scrolling only when wheel dispatch is unsupported", async () => {
+test("wheel forwards deltaX/deltaY and the viewport point to CDP", async () => {
   const calls = [];
+  const probe = visibleAndFocused(true);
   const restore = setOverrides({
-    cdpOverride(method, params, sessionId) {
-      calls.push({ method, params, sessionId });
-      if (method === "Input.dispatchMouseEvent") {
-        throw new Error("'Input.dispatchMouseEvent' wasn't found");
-      }
-      if (method === "Runtime.evaluate") {
-        return { result: { value: { x: 0, y: 450 } } };
-      }
-      return {};
+    cdpOverride(method, params) {
+      calls.push({ method, params });
+      return probe(method, params);
     },
   });
   try {
-    const result = await scroll({ x: 50, y: 60, dx: 10, dy: 450 });
-    assert.deepEqual(result, { x: 0, y: 450 });
+    await wheel(10, 450, { x: 50, y: 60 });
   } finally {
     restore();
   }
-
-  assert.equal(calls[0].method, "Input.dispatchMouseEvent");
-  assert.deepEqual(calls[0].params, {
+  const dispatch = calls.find((c) => c.method === "Input.dispatchMouseEvent");
+  assert.deepEqual(dispatch.params, {
     type: "mouseWheel",
     x: 50,
     y: 60,
     deltaX: 10,
     deltaY: 450,
   });
-  assert.equal(calls[1].method, "Runtime.evaluate");
-  assert.match(calls[1].params.expression, /window\.scrollBy/);
 });
 
-test("scroll propagates wheel dispatch timeouts instead of silently degrading", async () => {
-  // Regression: any error (including timeouts and "user is controlling") used
-  // to silently fall back to window.scrollBy, which is not equivalent to a
-  // real wheel event and masked the original failure.
+test("wheel dispatches a synthetic WheelEvent when the page is not visible/focused", async () => {
   const calls = [];
+  const probe = visibleAndFocused(false);
   const restore = setOverrides({
-    cdpOverride(method) {
-      calls.push(method);
-      if (method === "Input.dispatchMouseEvent") {
-        throw new Error("CDP request timed out: Input.dispatchMouseEvent");
-      }
-      return {};
+    cdpOverride(method, params) {
+      calls.push({ method, params });
+      return probe(method, params);
     },
   });
   try {
-    await assert.rejects(() => scroll({ dy: 450 }), /timed out/);
+    await wheel(0, 350, { x: 5, y: 7 });
   } finally {
     restore();
   }
-  assert.deepEqual(calls, ["Input.dispatchMouseEvent"]);
+  assert.ok(
+    !calls.some((c) => c.method === "Input.dispatchMouseEvent"),
+    "no CDP wheel dispatch on a backgrounded/unfocused tab",
+  );
+  const synthetic = calls.find(
+    (c) =>
+      c.method === "Runtime.evaluate" &&
+      c.params.expression.includes("WheelEvent"),
+  );
+  assert.ok(synthetic, "dispatches a synthetic WheelEvent in the page");
+  assert.match(synthetic.params.expression, /elementFromPoint\(5, 7\)/);
+  assert.match(synthetic.params.expression, /deltaY: 350/);
 });
 
-test("scroll propagates user-control errors from wheel dispatch", async () => {
+test("wheel propagates user-control errors from the CDP dispatch", async () => {
+  const probe = visibleAndFocused(true);
   const restore = setOverrides({
-    cdpOverride(method) {
+    cdpOverride(method, params) {
       if (method === "Input.dispatchMouseEvent") {
         throw new Error("user is controlling this task space");
       }
-      return {};
+      return probe(method, params);
     },
   });
   try {
-    await assert.rejects(() => scroll(), /user is controlling/);
+    await assert.rejects(() => wheel(), /user is controlling/);
   } finally {
     restore();
   }

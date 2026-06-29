@@ -113,7 +113,7 @@ export function observationCase() {
     assertEqual(eventsAfterDrain.length, 0, "drainEvents clears the event buffer");
 
     /* dynamic DOM — add element, verify snapshot picks it up */
-    cliLog(JSON.stringify({ observationStep: "dynamic DOM" }));
+    console.log(JSON.stringify({ observationStep: "dynamic DOM" }));
     await click("#remove-element");
     await waitForTimeout(100);
     const textBefore = await snapshotText({ scope: "full_page" });
@@ -126,7 +126,7 @@ export function observationCase() {
     assertIncludes(String(textAfter), "Dynamic!", "snapshot text includes dynamically created element");
 
     /* iframe interaction — evaluate JS inside the iframe */
-    cliLog(JSON.stringify({ observationStep: "iframe" }));
+    console.log(JSON.stringify({ observationStep: "iframe" }));
     const frameTarget = await iframeTarget("/frame.html");
     if (frameTarget) {
       const iframeMarkerText = await evaluate(
@@ -138,7 +138,7 @@ export function observationCase() {
       const iframeTitle = await evaluate("return document.title", frameTarget);
       assertEqual(iframeTitle, "ego-lite iframe", "js reads iframe page title via targetId");
     } else {
-      cliLog(JSON.stringify({ iframeWarning: "iframe target not available, skipping iframe tests" }));
+      console.log(JSON.stringify({ iframeWarning: "iframe target not available, skipping iframe tests" }));
     }
   `;
 }

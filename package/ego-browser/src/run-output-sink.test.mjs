@@ -79,8 +79,8 @@ async function runScript(code, ego) {
   return { exitCode, error, stdout: stdout.text(), stderr: stderr.text() };
 }
 
-test("a clean run flushes buffered cliLog output in order", async () => {
-  const result = await runScript(`cliLog("one"); cliLog("two");`);
+test("a clean run flushes buffered console.log output in order", async () => {
+  const result = await runScript(`console.log("one"); console.log("two");`);
   assert.equal(result.exitCode, 0);
   assert.equal(result.stdout, "one\ntwo\n");
 });
@@ -90,15 +90,15 @@ test("a swallowed user-control hard stop discards all output and prints the guid
   const result = await runScript(
     `
       for (const site of ["a", "b", "c"]) {
-        cliLog("visiting " + site);
+        console.log("visiting " + site);
         try {
           await listTaskSpaces();
-          cliLog("ok " + site);
+          console.log("ok " + site);
         } catch (e) {
-          cliLog("failed " + site + ": " + e.message);
+          console.log("failed " + site + ": " + e.message);
         }
       }
-      cliLog("summary: done");
+      console.log("summary: done");
     `,
     ego,
   );
@@ -120,9 +120,9 @@ test("an inactive / unassigned task space is also a hard stop", async () => {
       try {
         await listTaskSpaces();
       } catch (e) {
-        cliLog("swallowed: " + e.message);
+        console.log("swallowed: " + e.message);
       }
-      cliLog("more business output");
+      console.log("more business output");
     `,
     ego,
   );
@@ -140,15 +140,15 @@ test("a swallowed snapshot hard stop (rejected, not resolved) also collapses to 
   const result = await runScript(
     `
       for (const site of ["a", "b", "c"]) {
-        cliLog("visiting " + site);
+        console.log("visiting " + site);
         try {
           await snapshotText();
-          cliLog("ok " + site);
+          console.log("ok " + site);
         } catch (e) {
-          cliLog("failed " + site + ": " + e.message);
+          console.log("failed " + site + ": " + e.message);
         }
       }
-      cliLog("summary: done");
+      console.log("summary: done");
     `,
     ego,
   );
@@ -170,9 +170,9 @@ test("an uncaught hard stop discards output without double-printing the message"
   const ego = hardStopEgo("EGO_TASK_SPACE_USER_IN_CONTROL");
   const result = await runScript(
     `
-      cliLog("before");
+      console.log("before");
       await listTaskSpaces();
-      cliLog("after");
+      console.log("after");
     `,
     ego,
   );
@@ -186,7 +186,7 @@ test("an uncaught hard stop discards output without double-printing the message"
 
 test("an ordinary uncaught error still flushes the output logged before it", async () => {
   const result = await runScript(`
-    cliLog("partial result");
+    console.log("partial result");
     throw new Error("boom");
   `);
 
