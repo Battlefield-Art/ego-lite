@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 
 import { setOverrides } from "../../dist/src/state.js";
 import { cdp } from "../../dist/src/cdp-eval.js";
-import { waitForNetworkIdle } from "../../dist/src/driver/waits.js";
+import { waitForLoadState } from "../../dist/src/driver/waits.js";
 
-test("waitForNetworkIdle enables the Network domain and disables it afterwards", async () => {
+test("waitForLoadState enables the Network domain and disables it afterwards", async () => {
   // Regression: nothing used to enable the Network domain, so the helper could
   // report "idle" without ever being able to observe traffic.
   const methods = [];
@@ -21,7 +21,7 @@ test("waitForNetworkIdle enables the Network domain and disables it afterwards",
     },
   });
   try {
-    const result = await waitForNetworkIdle({ timeout: 5 });
+    const result = await waitForLoadState("networkidle", { timeout: 5000 });
     assert.equal(result, true, "no traffic for idleMs resolves true");
   } finally {
     restore();
@@ -38,7 +38,7 @@ test("waitForNetworkIdle enables the Network domain and disables it afterwards",
   );
 });
 
-test("waitForNetworkIdle leaves a caller-enabled Network domain enabled", async () => {
+test("waitForLoadState leaves a caller-enabled Network domain enabled", async () => {
   const methods = [];
   let t = 0;
   const restore = setOverrides({
@@ -54,7 +54,7 @@ test("waitForNetworkIdle leaves a caller-enabled Network domain enabled", async 
   try {
     await cdp("Network.enable"); // the caller owns the domain
     methods.length = 0;
-    const result = await waitForNetworkIdle({ timeout: 5 });
+    const result = await waitForLoadState("networkidle", { timeout: 5000 });
     assert.equal(result, true);
   } finally {
     restore();
@@ -65,7 +65,7 @@ test("waitForNetworkIdle leaves a caller-enabled Network domain enabled", async 
   );
 });
 
-test("waitForNetworkIdle survives a bridge that rejects Network.enable", async () => {
+test("waitForLoadState survives a bridge that rejects Network.enable", async () => {
   let t = 0;
   const restore = setOverrides({
     cdpOverride: async (method) => {
@@ -80,7 +80,7 @@ test("waitForNetworkIdle survives a bridge that rejects Network.enable", async (
     },
   });
   try {
-    const result = await waitForNetworkIdle({ timeout: 5 });
+    const result = await waitForLoadState("networkidle", { timeout: 5000 });
     assert.equal(result, true, "falls back to passive observation");
   } finally {
     restore();

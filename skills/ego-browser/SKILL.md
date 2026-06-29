@@ -8,7 +8,7 @@ metadata:
 
 # ego-browser
 
-ego-browser gives AI agents a CLI-accessible Node.js runtime, with built-in helpers — snapshotText, click, js, cdp, and more — that agents call directly inside JS scripts to observe pages, interact with UI, evaluate browser-side JavaScript, and drive a real browser for any web automation task.
+ego-browser gives AI agents a CLI-accessible Node.js runtime, with built-in helpers — snapshotText, click, evaluate, cdp, and more — that agents call directly inside JS scripts to observe pages, interact with UI, evaluate browser-side JavaScript, and drive a real browser for any web automation task.
 
 For setup, install, or connection problems, read `references/install.md`.
 
@@ -34,14 +34,14 @@ The heredoc body runs as a Node.js script that controls the selected ego-browser
 ## Common helpers
 
 - Task spaces: `listTaskSpaces`, `useOrCreateTaskSpace`, `claimTaskSpace`, `handOffTaskSpace`, `takeOverTaskSpace`, `waitForAgentControl`, `completeTaskSpace`
-- Navigation / state: `listTabs`, `openOrReuseTab`, `closeTab`, `gotoAndWait`, `currentTab`, `switchTab`, `gotoUrl`, `pageInfo`, `ensureRealTab`
-- Observation: `snapshotText`, `captureScreenshot`, `drainEvents`
-- Scroll / mouse: `scrollBy`, `scrollToBottomUntil`, `scroll`, `click`, `doubleClick`, `hover`, `dragMouse`
-- Keyboard & input: `typeText`, `fillInput`, `pressKey`, `dispatchKey`
-- File: `uploadFile`
-- Wait: `wait`, `waitForLoad`, `waitForElement`, `waitForNetworkIdle`
+- Navigation / state: `listTabs`, `openOrReuseTab`, `closeTab`, `goto`, `currentTab`, `switchTab`, `pageInfo`, `ensureRealTab`
+- Observation: `snapshotText`, `screenshot`, `drainEvents`
+- Scroll / mouse: `scrollBy`, `scrollToBottomUntil`, `scroll`, `click`, `dblclick`, `hover`, `drag`
+- Keyboard & input: `insertText`, `fill`, `press`, `dispatchKey`
+- File: `setInputFiles`
+- Wait: `waitForTimeout`, `waitForLoadState`, `waitForSelector`
 - Fetch: `serverFetch`, `browserFetch`
-- CDP / evaluate: `js`, `cdp`
+- CDP / evaluate: `evaluate`, `cdp`
 - Output: `cliLog`, `help`
 
 Notes:
@@ -117,7 +117,7 @@ An "inactive", "not assigned to an agent", or similar task-space error is also a
 // DOM scroll
 await scrollBy(900)
 await scrollToBottomUntil(
-  async () => await js(String.raw`document.querySelectorAll('article').length`) >= 20,
+  async () => await evaluate(String.raw`document.querySelectorAll('article').length`) >= 20,
   { step: 900, wait: 1, maxSteps: 20 }
 )
 
@@ -125,9 +125,9 @@ await scrollToBottomUntil(
 await scroll({ dy: 900 })
 ```
 
-Element-target helpers such as `click`, `doubleClick`, `hover`, `dragMouse`, `fillInput`, `uploadFile`, and `waitForElement` accept the same selector/ref surface: raw CSS, `xpath=...`, `@N` / `ref=N`, and `loc=...` values from `snapshotText()` (`loc=css:...`, `loc=role:...`, `loc=href:...`). `@N` refs are for ego-browser helpers only; they are not valid selectors inside `document.querySelector(...)`.
+Element-target helpers such as `click`, `dblclick`, `hover`, `drag`, `fill`, `setInputFiles`, and `waitForSelector` accept the same selector/ref surface: raw CSS, `xpath=...`, `@N` / `ref=N`, and `loc=...` values from `snapshotText()` (`loc=css:...`, `loc=role:...`, `loc=href:...`). `@N` refs are for ego-browser helpers only; they are not valid selectors inside `document.querySelector(...)`.
 
-`click`, `doubleClick`, `hover`, and `dragMouse` share these target formats. Coordinates are in CSS pixels:
+`click`, `dblclick`, `hover`, and `drag` share these target formats. Coordinates are in CSS pixels:
 
 - `string` — CSS selector, `xpath=...`, `@N` / `ref=N`, or `loc=...`; clicks the element's center.
 - `[x, y]` or `{x, y}` — viewport coordinates.
@@ -142,23 +142,23 @@ await click([420, 260])
 await click({ x: 420, y: 260 })
 await click({ selector: 'canvas#stage', x: 12, y: 8 })
 await hover('@5', { label: 'hover to reveal menu' })
-await dragMouse([from, to], { label: 'drag card' })
+await drag([from, to], { label: 'drag card' })
 ```
 
-### uploadFile
+### setInputFiles
 
 ```js
-await uploadFile('input[type="file"]', "/absolute/path/to/file.pdf")
+await setInputFiles('input[type="file"]', "/absolute/path/to/file.pdf")
 ```
 
-### js
+### evaluate
 
-`js()` is essentially `Runtime.evaluate` and takes a string. You can pass a function, but doing so triggers a one-time warning and wraps it via `.toString()` — closures are not captured and there is no argument channel. Do not use `js()` the way you would Puppeteer / Playwright's `page.evaluate(fn, ...args)`.
+`evaluate()` is essentially `Runtime.evaluate` and takes a string. You can pass a function, but doing so triggers a one-time warning and wraps it via `.toString()` — closures are not captured and there is no argument channel. Do not use `evaluate()` the way you would Puppeteer / Playwright's `page.evaluate(fn, ...args)`.
 
-When you need to run multi-step logic inside the browser, wrap it in a single self-invoking closure and return once — don't split it across multiple `await js()` calls:
+When you need to run multi-step logic inside the browser, wrap it in a single self-invoking closure and return once — don't split it across multiple `await evaluate()` calls:
 
 ```js
-const data = await js(String.raw`(() => {
+const data = await evaluate(String.raw`(() => {
   const items = [...document.querySelectorAll('article')]
   return items.map(el => ({
     text: el.innerText,
@@ -172,22 +172,22 @@ const data = await js(String.raw`(() => {
 
 ego-browser has three main workflows. Pick the workflow that fits the page and task before acting.
 
-Use the semantic workflow first for ordinary websites with real DOM controls. For canvas-like productivity apps and rich editors — including Google Docs, Google Sheets, Lark/Feishu Docs, Notion, Figma, whiteboards, maps, and other virtualized editors — use the visual workflow first for the main editing surface. These apps often expose toolbars, title inputs, hidden textareas, offscreen iframes, or canvas layers in the DOM that do not represent the actual user-editable document or grid. Do not rely on `await fillInput(...)`, DOM selectors, or `snapshotText()` refs for the main editing surface unless a small write probe proves the text lands in the intended place.
+Use the semantic workflow first for ordinary websites with real DOM controls. For canvas-like productivity apps and rich editors — including Google Docs, Google Sheets, Lark/Feishu Docs, Notion, Figma, whiteboards, maps, and other virtualized editors — use the visual workflow first for the main editing surface. These apps often expose toolbars, title inputs, hidden textareas, offscreen iframes, or canvas layers in the DOM that do not represent the actual user-editable document or grid. Do not rely on `await fill(...)`, DOM selectors, or `snapshotText()` refs for the main editing surface unless a small write probe proves the text lands in the intended place.
 
-Before writing substantial content into a rich editor, perform a tiny write probe, then verify it with `await captureScreenshot()`, an export/readback path, or another reliable visual/state check. If the probe appears in the title bar, toolbar search, hidden input, or any wrong field, stop using DOM/input helpers for that surface and switch to screenshot-guided mouse actions plus real keyboard operations.
+Before writing substantial content into a rich editor, perform a tiny write probe, then verify it with `await screenshot()`, an export/readback path, or another reliable visual/state check. If the probe appears in the title bar, toolbar search, hidden input, or any wrong field, stop using DOM/input helpers for that surface and switch to screenshot-guided mouse actions plus real keyboard operations.
 
 1. **Semantic workflow: `snapshotText()` + refs / locators** — default for most pages with normal text, links, buttons, forms, tables, and lists.
    - Reuse or create a task space: `const task = await useOrCreateTaskSpace(name)`.
-   - Open or switch pages with `await openOrReuseTab(url, { wait: true })`; use `await gotoAndWait(url, { timeout, settle })` only when navigating inside the current tab.
+   - Open or switch pages with `await openOrReuseTab(url, { wait: true })`; use `await goto(url, { timeout, settle })` only when navigating inside the current tab.
    - Observe with `await snapshotText()` to get a full-page semantic tree annotated with `[ref=N, loc=..., url=...]`.
-   - Act with `await click('@N')`, `await fillInput('@N', ...)`, or stable `loc=...` values. Use direct DOM logic only when it is simpler than helper calls.
-   - After meaningful clicks, input, or navigation, observe again with `await snapshotText()`, `await pageInfo()`, or `await captureScreenshot()` before assuming success.
+   - Act with `await click('@N')`, `await fill('@N', ...)`, or stable `loc=...` values. Use direct DOM logic only when it is simpler than helper calls.
+   - After meaningful clicks, input, or navigation, observe again with `await snapshotText()`, `await pageInfo()`, or `await screenshot()` before assuming success.
 
-2. **Visual workflow: `await captureScreenshot()` + coordinate/keyboard actions** — use when the page is primarily visual, canvas-like, heavily virtualized, or when accessibility / semantic structure is incomplete.
-   - Inspect the screenshot, act with viewport coordinates such as `await click([x, y])`, `await doubleClick([x, y])`, `await pressKey(...)`, and `await typeText(...)`, then verify with another screenshot or a reliable export/readback path.
+2. **Visual workflow: `await screenshot()` + coordinate/keyboard actions** — use when the page is primarily visual, canvas-like, heavily virtualized, or when accessibility / semantic structure is incomplete.
+   - Inspect the screenshot, act with viewport coordinates such as `await click([x, y])`, `await dblclick([x, y])`, `await press(...)`, and `await insertText(...)`, then verify with another screenshot or a reliable export/readback path.
    - Prefer this path for rich editors, spreadsheets, visual menus, map/canvas UIs, drag interactions, and targets that are obvious visually but poor in the DOM/AX tree.
 
-3. **Direct DOM / CDP workflow: `await js(...)` / `await cdp(...)`** — use when you need browser state, compact data extraction, custom DOM traversal, or raw browser capabilities.
+3. **Direct DOM / CDP workflow: `await evaluate(...)` / `await cdp(...)`** — use when you need browser state, compact data extraction, custom DOM traversal, or raw browser capabilities.
    - Keep browser-side logic in one explicit IIFE and return once.
    - Use `await cdp(...)` for browser protocol operations that helpers do not cover.
 
@@ -196,14 +196,14 @@ These workflows can be combined. A task may take multiple heredoc rounds when th
 
 ## Caveats
 
-- `wait(...)` and `timeout` values are in **seconds**; only parameters whose names end in `Ms` are milliseconds.
+- Time values are in **milliseconds** (Playwright-style): `waitForTimeout(ms)`, and `timeout` / `settle` on `goto`, `waitForLoadState`, `waitForSelector`, `openOrReuseTab`. Exceptions still in **seconds**: `serverFetch` / `browserFetch` `timeout`, `waitForAgentControl` `interval` / `timeout`, and `scrollToBottomUntil`'s `wait`.
 - `snapshotText()` defaults to `scope: 'full_page'`, covering the whole page. Use the default in almost every case; only pass `scope: 'only_within_viewport'` when the task needs only visible content.
 - `@N` refs are only valid for the most recent `snapshotText` call — every call rebuilds the refMap. Ref numbers come from the CDP `backendNodeId`, so the same element keeps the same number across calls; but to use `@N`, N must appear in the latest snapshotText output. An element scrolled out of the viewport, a DOM re-render, or a previous call with `scope:'only_within_viewport'` that didn't cover the element will all cause `Unknown ref`. For elements you need to reference long-term, use the `loc=...` value from snapshotText output as a stable selector, or write a CSS selector directly.
-- `js()` returns the evaluated result, not a JSON string — don't wrap it with `JSON.parse(...)`.
-- Inside a `js(...)` template string, regex backslashes must be doubled (e.g. `\\d`, `\\s`), or use `String.raw`.
-- If the source passed to `js()` contains a top-level `return`, it will be auto-wrapped in an IIFE; `return` inside nested callbacks can also trigger this accidentally. For complex expressions, prefer the explicit `(() => { ... })()` form.
-- If `await pageInfo()` reports `w: 0` or `h: 0`, do not continue coordinate actions or screenshots until the viewport is fixed. Try switching to the real tab, reloading, or using CDP viewport metrics, then verify with `await pageInfo()` and `await captureScreenshot()`.
-- Code in the heredoc body runs in Node.js; code inside `js(...)` runs in the browser page. Navigation, waits, and `cliLog(...)` belong in the heredoc body; `document`, `window`, and page selectors belong inside `js(...)`.
+- `evaluate()` returns the evaluated result, not a JSON string — don't wrap it with `JSON.parse(...)`.
+- Inside a `evaluate(...)` template string, regex backslashes must be doubled (e.g. `\\d`, `\\s`), or use `String.raw`.
+- If the source passed to `evaluate()` contains a top-level `return`, it will be auto-wrapped in an IIFE; `return` inside nested callbacks can also trigger this accidentally. For complex expressions, prefer the explicit `(() => { ... })()` form.
+- If `await pageInfo()` reports `w: 0` or `h: 0`, do not continue coordinate actions or screenshots until the viewport is fixed. Try switching to the real tab, reloading, or using CDP viewport metrics, then verify with `await pageInfo()` and `await screenshot()`.
+- Code in the heredoc body runs in Node.js; code inside `evaluate(...)` runs in the browser page. Navigation, waits, and `cliLog(...)` belong in the heredoc body; `document`, `window`, and page selectors belong inside `evaluate(...)`.
 - Always call `completeTaskSpace(name, { keep })` when the task is done — do not leave the space hanging. Default to `{ keep: false }`; use `{ keep: true }` only for the concrete live-page cases described in Task spaces.
 - When the user explicitly asks to use ego-browser, assume both `ego-browser` and the repo runtime are ready. Do not pre-check `which ego-browser`, `node -v`, package metadata, or help output. Only investigate environment issues if the first run produces an error.
 - If the first run reports `command not found` / a missing environment (most likely ego lite isn't installed yet), or the user explicitly asks to install ego lite, first read `references/install.md` and follow its flow to complete the install, then return to the original task — do not give up, and do not keep retrying the same heredoc.

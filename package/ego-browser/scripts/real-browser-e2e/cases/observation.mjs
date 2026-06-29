@@ -82,28 +82,28 @@ export function observationCase() {
       "elementCenter reports missing elements"
     );
 
-    const screenshotPath = await captureScreenshot(undefined, { full: false });
+    const screenshotPath = await screenshot({ path: undefined, fullPage: false });
     const screenshotStat = await stat(screenshotPath);
-    assert(screenshotStat.size > 100, "captureScreenshot writes a non-trivial png");
+    assert(screenshotStat.size > 100, "screenshot writes a non-trivial png");
     const screenshotBuf = await readFile(screenshotPath);
     assertEqual(screenshotBuf[0], 137, "screenshot starts with PNG magic byte 137");
     assertEqual(screenshotBuf[1], 80, "screenshot has PNG header byte P (80)");
 
-    const explicitPath = await captureScreenshot(explicitScreenshotPath, { full: false });
-    assertEqual(explicitPath, explicitScreenshotPath, "captureScreenshot returns explicit path");
+    const explicitPath = await screenshot({ path: explicitScreenshotPath, fullPage: false });
+    assertEqual(explicitPath, explicitScreenshotPath, "screenshot returns explicit path");
     const explicitStat = await stat(explicitPath);
-    assert(explicitStat.size > 0, "captureScreenshot writes explicit path");
+    assert(explicitStat.size > 0, "screenshot writes explicit path");
 
-    const fullScreenshotPath = await captureScreenshot(undefined, { full: true });
+    const fullScreenshotPath = await screenshot({ path: undefined, fullPage: true });
     const fullScreenshotStat = await stat(fullScreenshotPath);
-    assert(fullScreenshotStat.size > 0, "captureScreenshot supports full page");
+    assert(fullScreenshotStat.size > 0, "screenshot supports full page");
 
-    const rawScreenshotPath = await captureScreenshot(undefined, {
+    const rawScreenshotPath = await screenshot({ path: undefined,
       raw: true,
       clip: { x: 0, y: 0, width: 120, height: 120, scale: 1 },
     });
     const rawScreenshotStat = await stat(rawScreenshotPath);
-    assert(rawScreenshotStat.size > 0, "captureScreenshot supports raw clips");
+    assert(rawScreenshotStat.size > 0, "screenshot supports raw clips");
 
     await cdp("Network.enable");
     await browserFetch("/api/text", { timeout: 5 });
@@ -115,13 +115,13 @@ export function observationCase() {
     /* dynamic DOM — add element, verify snapshot picks it up */
     cliLog(JSON.stringify({ observationStep: "dynamic DOM" }));
     await click("#remove-element");
-    await wait(0.1);
+    await waitForTimeout(100);
     const textBefore = await snapshotText({ scope: "full_page" });
     assert(!String(textBefore).includes("Dynamic!"), "snapshot text does not contain dynamic element before creation");
 
     await click("#add-element");
-    await waitForElement("#dynamic-element", { timeout: 3, visible: true });
-    await wait(0.2);
+    await waitForSelector("#dynamic-element", { timeout: 3000, state: "visible" });
+    await waitForTimeout(200);
     const textAfter = await snapshotText({ scope: "full_page" });
     assertIncludes(String(textAfter), "Dynamic!", "snapshot text includes dynamically created element");
 
@@ -129,13 +129,13 @@ export function observationCase() {
     cliLog(JSON.stringify({ observationStep: "iframe" }));
     const frameTarget = await iframeTarget("/frame.html");
     if (frameTarget) {
-      const iframeMarkerText = await js(
+      const iframeMarkerText = await evaluate(
         "return document.querySelector('#iframe-marker')?.textContent",
         frameTarget
       );
       assertEqual(iframeMarkerText, "iframe target", "js evaluates inside iframe using targetId");
 
-      const iframeTitle = await js("return document.title", frameTarget);
+      const iframeTitle = await evaluate("return document.title", frameTarget);
       assertEqual(iframeTitle, "ego-lite iframe", "js reads iframe page title via targetId");
     } else {
       cliLog(JSON.stringify({ iframeWarning: "iframe target not available, skipping iframe tests" }));

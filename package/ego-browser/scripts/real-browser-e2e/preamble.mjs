@@ -129,16 +129,16 @@ async function waitForJsValue(
   const deadline = Date.now() + 2000;
   let last;
   while (Date.now() <= deadline) {
-    last = await js(expression);
+    last = await evaluate(expression);
     if (last === expected) {
       logAssertion("pass", message);
       return last;
     }
-    await wait(0.05);
+    await waitForTimeout(50);
   }
   let detail = "";
   if (debugExpression) {
-    detail = "; debug=" + JSON.stringify(await js(debugExpression));
+    detail = "; debug=" + JSON.stringify(await evaluate(debugExpression));
   }
   logAssertion("fail", message, {
     expected: formatAssertionValue(expected),
@@ -160,16 +160,16 @@ async function waitForJsCondition(expression, message, debugExpression = null) {
   const deadline = Date.now() + 2000;
   let last;
   while (Date.now() <= deadline) {
-    last = await js(expression);
+    last = await evaluate(expression);
     if (last) {
       logAssertion("pass", message);
       return last;
     }
-    await wait(0.05);
+    await waitForTimeout(50);
   }
   let detail = "";
   if (debugExpression) {
-    detail = "; debug=" + JSON.stringify(await js(debugExpression));
+    detail = "; debug=" + JSON.stringify(await evaluate(debugExpression));
   }
   logAssertion("fail", message, {
     actual: formatAssertionValue(last),
@@ -209,11 +209,11 @@ async function setStableViewport() {
     deviceScaleFactor: 1,
     mobile: false,
   }).catch(() => {});
-  await wait(0.1);
+  await waitForTimeout(100);
 }
 
 async function hitTestClickButton() {
-  return js(
+  return evaluate(
     "const el = document.querySelector('#click-button');" +
       "if (!el) return '';" +
       "const r = el.getBoundingClientRect();" +
@@ -237,15 +237,15 @@ async function resetHome() {
   await closeFixtureTabs();
   const tab = await openOrReuseTab(baseUrl + "/?e2e-reset=" + Date.now(), {
     wait: true,
-    timeout: 10,
+    timeout: 10000,
   });
   await switchTab(tab.targetId);
   await setStableViewport();
-  const nav = await gotoAndWait(baseUrl + "/", { timeout: 10 });
+  const nav = await goto(baseUrl + "/", { timeout: 10000 });
   assert(nav.loaded, "home page loaded");
   await setStableViewport();
   assert(
-    await waitForElement("#click-button", { timeout: 3, visible: true }),
+    await waitForSelector("#click-button", { timeout: 3000, state: "visible" }),
     "home fixture click button is visible",
   );
   for (let i = 0; i < 10; i += 1) {

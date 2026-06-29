@@ -43,12 +43,12 @@ export function environmentCase() {
       cliLog(JSON.stringify({ capabilityWarning: { method: "Browser.getVersion", message: error?.message || String(error) } }));
     }
 
-    await fillInput("#text-input", "dirty", { timeout: 3 });
-    assertEqual(await js("return document.querySelector('#text-input').value"), "dirty", "environment can dirty fixture state");
+    await fill("#text-input", "dirty", { timeout: 3000 });
+    assertEqual(await evaluate("return document.querySelector('#text-input').value"), "dirty", "environment can dirty fixture state");
     home = await resetHome();
-    assertEqual(await js("return document.querySelector('#text-input').value"), "initial", "resetHome restores deterministic fixture state");
+    assertEqual(await evaluate("return document.querySelector('#text-input').value"), "initial", "resetHome restores deterministic fixture state");
 
-    const envShot = await captureScreenshot(environmentScreenshotPath, { full: false });
+    const envShot = await screenshot({ path: environmentScreenshotPath, fullPage: false });
     assertEqual(envShot, environmentScreenshotPath, "environment screenshot uses artifact path");
     const envShotStat = await stat(envShot);
     assert(envShotStat.size > 0, "environment screenshot artifact is non-empty");

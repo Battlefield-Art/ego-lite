@@ -41,7 +41,7 @@ Read the ego-browser skill for the default workflow and examples.
 
 Typical usage:
   ego-browser <<'JS'
-  await waitForLoad()
+  await waitForLoadState()
   cliLog(await pageInfo())
   JS
 

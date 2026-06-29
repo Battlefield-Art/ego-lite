@@ -5,7 +5,7 @@ import {
   hasReturnStatement,
   decodeUnserializableJsValue,
   runtimeValue,
-  js,
+  evaluate,
   cdp,
 } from "../dist/src/cdp-eval.js";
 import { setOverrides } from "../dist/src/state.js";
@@ -318,10 +318,10 @@ test("cdp tracks Network domain state on enable", async () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  js() — expression evaluation with auto-wrapping                   */
+/*  evaluate() — expression evaluation with auto-wrapping                   */
 /* ------------------------------------------------------------------ */
 
-test("js auto-wraps expressions with return in an IIFE", async () => {
+test("evaluate auto-wraps expressions with return in an IIFE", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
@@ -333,7 +333,7 @@ test("js auto-wraps expressions with return in an IIFE", async () => {
     },
   });
   try {
-    const result = await js("return 42");
+    const result = await evaluate("return 42");
     assert.equal(result, 42);
     assert.match(capturedExpression, /^\(function\(\)\{/);
   } finally {
@@ -341,7 +341,7 @@ test("js auto-wraps expressions with return in an IIFE", async () => {
   }
 });
 
-test("js passes plain expressions without IIFE wrapping", async () => {
+test("evaluate passes plain expressions without IIFE wrapping", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
@@ -353,7 +353,7 @@ test("js passes plain expressions without IIFE wrapping", async () => {
     },
   });
   try {
-    const result = await js("1 + 2");
+    const result = await evaluate("1 + 2");
     assert.equal(result, 3);
     assert.equal(capturedExpression, "1 + 2");
   } finally {
@@ -361,7 +361,7 @@ test("js passes plain expressions without IIFE wrapping", async () => {
   }
 });
 
-test("js does not wrap when expression already starts with paren", async () => {
+test("evaluate does not wrap when expression already starts with paren", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
@@ -373,14 +373,14 @@ test("js does not wrap when expression already starts with paren", async () => {
     },
   });
   try {
-    await js("(function(){ return 10 })()");
+    await evaluate("(function(){ return 10 })()");
     assert.equal(capturedExpression, "(function(){ return 10 })()");
   } finally {
     restore();
   }
 });
 
-test("js converts a function argument to a string call", async () => {
+test("evaluate converts a function argument to a string call", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
@@ -392,7 +392,7 @@ test("js converts a function argument to a string call", async () => {
     },
   });
   try {
-    await js(function () {
+    await evaluate(function () {
       return 1;
     });
     assert.match(capturedExpression, /^\(function\s*\(\)/);
@@ -402,18 +402,18 @@ test("js converts a function argument to a string call", async () => {
   }
 });
 
-test("js rejects non-string/non-function input", async () => {
+test("evaluate rejects non-string/non-function input", async () => {
   await assert.rejects(
-    () => js(123),
+    () => evaluate(123),
     /expects a string expression or function/,
   );
   await assert.rejects(
-    () => js(null),
+    () => evaluate(null),
     /expects a string expression or function/,
   );
 });
 
-test("js propagates page exceptions", async () => {
+test("evaluate propagates page exceptions", async () => {
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
       if (method === "Runtime.evaluate") {
@@ -435,13 +435,13 @@ test("js propagates page exceptions", async () => {
     },
   });
   try {
-    await assert.rejects(() => js("x"), /ReferenceError/);
+    await assert.rejects(() => evaluate("x"), /ReferenceError/);
   } finally {
     restore();
   }
 });
 
-test("js attaches to a target session when targetId is given", async () => {
+test("evaluate attaches to a target session when targetId is given", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride: async (method, params, sessionId) => {
@@ -456,7 +456,7 @@ test("js attaches to a target session when targetId is given", async () => {
     },
   });
   try {
-    const result = await js("document.title", "target-abc");
+    const result = await evaluate("document.title", "target-abc");
     assert.equal(result, "iframe-result");
     // First call should be attachToTarget, second should be evaluate with the session
     assert.equal(calls[0][0], "Target.attachToTarget");

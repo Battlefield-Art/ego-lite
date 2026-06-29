@@ -7,7 +7,7 @@ import {
   pendingDialog,
   setPreferredTarget,
 } from "../browser-runtime.js";
-import { cdp, js } from "../cdp-eval.js";
+import { cdp, evaluate } from "../cdp-eval.js";
 import { assertNoEgoError } from "../ego-errors.js";
 import { state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
@@ -28,10 +28,10 @@ type TabInfo = {
   index?: number;
 };
 
-type GotoAndWaitOptions = {
+type GotoOptions = {
+  waitUntil?: "load" | "domcontentloaded" | "commit";
   timeout?: number;
   settle?: number;
-  wait?: boolean;
 };
 
 type ListTabsOptions = {
@@ -50,32 +50,22 @@ type OpenOrReuseTabOptions = {
 type TabTarget = string | { targetId: string };
 
 /**
- * Navigate the current tab to a URL using CDP Page.navigate.
+ * Navigate the current tab to a URL and, by default, wait for it to load.
  * @param {string} url Absolute or browser-supported URL to load.
- * @returns {Promise<object>} CDP Page.navigate result.
- */
-export async function gotoUrl(url) {
-  return cdp("Page.navigate", { url });
-}
-
-/**
- * Navigate the current tab and wait for load/settle in one call.
- * @param {string} url Absolute or browser-supported URL to load.
- * @param {{timeout?: number, settle?: number, wait?: boolean}} [options]
+ * @param {{waitUntil?: "load"|"domcontentloaded"|"commit", timeout?: number, settle?: number}} [options]
+ *   `waitUntil: "commit"` returns once navigation is issued without waiting for the document to load.
+ *   `timeout` and `settle` are in milliseconds.
  * @returns {Promise<{navigation: object, loaded: boolean}>}
  */
-export async function gotoAndWait(
-  url: string,
-  options: GotoAndWaitOptions = {},
-) {
-  const navigation = await gotoUrl(url);
+export async function goto(url: string, options: GotoOptions = {}) {
+  const navigation = await cdp("Page.navigate", { url });
   const loaded =
-    options.wait === false
+    options.waitUntil === "commit"
       ? false
-      : await waitForDocumentLoad({ timeout: options.timeout ?? 20 });
+      : await waitForDocumentLoad({ timeout: options.timeout ?? 20000 });
   const settle = Number(options.settle ?? 0);
   if (settle > 0) {
-    await state.sleep(settle * 1000);
+    await state.sleep(settle);
   }
   return { navigation, loaded };
 }
@@ -94,7 +84,7 @@ export async function pageInfo() {
   }
   const expression =
     "JSON.stringify({url:location.href,title:document.title,w:innerWidth,h:innerHeight,sx:scrollX,sy:scrollY,pw:document.documentElement.scrollWidth,ph:document.documentElement.scrollHeight})";
-  return JSON.parse(await js(expression));
+  return JSON.parse(await evaluate(expression));
 }
 
 /**
@@ -180,17 +170,17 @@ export async function openOrReuseTab(
   if (existing) {
     await switchTab(existing.targetId);
     if (options.wait) {
-      await waitForDocumentLoad({ timeout: options.timeout ?? 20 });
+      await waitForDocumentLoad({ timeout: options.timeout ?? 20000 });
     }
     const settle = Number(options.settle ?? 0);
     if (settle > 0) {
-      await state.sleep(settle * 1000);
+      await state.sleep(settle);
     }
     return { ...existing, active: true, reused: true };
   }
   const targetId = await newTab(url);
   if (options.wait !== false) {
-    await waitForDocumentLoad({ timeout: options.timeout ?? 20 });
+    await waitForDocumentLoad({ timeout: options.timeout ?? 20000 });
   }
   const settle = Number(options.settle ?? 0);
   if (settle > 0) {

@@ -67,13 +67,13 @@ src/
   driver/
     pointer.ts           click, hover, drag, scroll, scrollBy
     observe.ts           snapshot, captureScreenshot, elementCenter
-    keyboard.ts          typeText, pressKey, fillInput, dispatchKey
+    keyboard.ts          insertText, pressKey, fillInput, dispatchKey
     nav.ts               tabs, gotoUrl, openOrReuseTab, closeTab
     load.ts              waitForLoad and load orchestration
     waits.ts             waitForElement, waitForNetworkIdle, wait
-    files.ts             uploadFile
+    files.ts             setInputFiles
   http.ts                serverFetch, browserFetch
-  cdp-eval.ts            cdp() and js() raw eval
+  cdp-eval.ts            cdp() and evaluate() raw eval
   learning/              site-learnings discovery and manifest validation
 scripts/
   build.mjs              esbuild bundling

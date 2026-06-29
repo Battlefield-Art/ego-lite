@@ -1,4 +1,4 @@
-import { cdp, js } from "../cdp-eval.js";
+import { cdp, evaluate } from "../cdp-eval.js";
 import { state } from "../state.js";
 
 export type WaitForLoadOptions = {
@@ -6,8 +6,8 @@ export type WaitForLoadOptions = {
 };
 
 export async function waitForDocumentLoad(options: WaitForLoadOptions = {}) {
-  const timeout = options.timeout ?? 15.0;
-  const deadline = state.now() + timeout * 1000;
+  const timeout = options.timeout ?? 15000;
+  const deadline = state.now() + timeout;
   while (state.now() < deadline) {
     let committed = true;
     try {
@@ -17,7 +17,7 @@ export async function waitForDocumentLoad(options: WaitForLoadOptions = {}) {
     } catch {
       // Page.getFrameTree may not be supported in some sessions; fall back to readyState only.
     }
-    if (committed && (await js("document.readyState")) === "complete") {
+    if (committed && (await evaluate("document.readyState")) === "complete") {
       return true;
     }
     await state.sleep(300);

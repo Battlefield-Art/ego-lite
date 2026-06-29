@@ -35,24 +35,24 @@ export async function cdp(method, params: any = {}, sessionId = undefined) {
  * @param {string} [targetId] Optional target id to attach and evaluate in.
  * @returns {Promise<any>} Runtime.evaluate return-by-value result.
  */
-export async function js(expression, targetId = undefined) {
+export async function evaluate(expression, targetId = undefined) {
   if (typeof expression === "function") {
     const source = expression.toString();
     if (!hasWarnedAboutFunctionJs) {
       hasWarnedAboutFunctionJs = true;
       process.stderr.write(
-        `[ego-browser] js() received a function and auto-wrapped it (${jsSnippet(source, 80)}).\n` +
-          `  js() is a thin wrapper over CDP Runtime.evaluate; it takes a string expression,\n` +
+        `[ego-browser] evaluate() received a function and auto-wrapped it (${jsSnippet(source, 80)}).\n` +
+          `  evaluate() is a thin wrapper over CDP Runtime.evaluate; it takes a string expression,\n` +
           `  not a Puppeteer/Playwright-style callable. Auto-wrap does NOT capture closure\n` +
           `  variables and has NO args channel.\n` +
           `  Prefer:\n` +
-          `    js(\`<expression>\`)  // pure expression or explicit IIFE\n`,
+          `    evaluate(\`<expression>\`)  // pure expression or explicit IIFE\n`,
       );
     }
     expression = `(${source})()`;
   } else if (typeof expression !== "string") {
     throw new TypeError(
-      `js() expects a string expression or function, got ${expression === null ? "null" : typeof expression}`,
+      `evaluate() expects a string expression or function, got ${expression === null ? "null" : typeof expression}`,
     );
   }
   const sessionId = targetId

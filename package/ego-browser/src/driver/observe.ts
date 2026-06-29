@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { state } from "../state.js";
-import { cdp, js } from "../cdp-eval.js";
+import { cdp, evaluate } from "../cdp-eval.js";
 import { pageInfo } from "./nav.js";
 import {
   browserEgo,
@@ -34,8 +34,9 @@ type ScreenshotClip = {
   scale?: number;
 };
 
-type CaptureScreenshotOptions = {
-  full?: boolean;
+type ScreenshotOptions = {
+  path?: string;
+  fullPage?: boolean;
   raw?: boolean;
   clip?: ScreenshotClip;
 };
@@ -93,14 +94,11 @@ export async function elementCenter(selectorOrRef) {
 // other's shots in the shared tmpdir, and successive shots in one run distinct.
 let screenshotSeq = 0;
 
-export async function captureScreenshot(
-  path = join(
-    tmpdir(),
-    `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`,
-  ),
-  options: CaptureScreenshotOptions = {},
-) {
-  const full = options.full ?? false;
+export async function screenshot(options: ScreenshotOptions = {}) {
+  const path =
+    options.path ??
+    join(tmpdir(), `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`);
+  const full = options.fullPage ?? false;
   const raw = options.raw ?? false;
   const params: any = {
     format: "png",
@@ -115,14 +113,14 @@ export async function captureScreenshot(
       await ensureSession();
     }
     if (!pendingDialog()) {
-      const dpr = Number(await js("window.devicePixelRatio")) || 1;
+      const dpr = Number(await evaluate("window.devicePixelRatio")) || 1;
       const cssScale = 1 / dpr;
       if (options.clip) {
         params.clip = { scale: cssScale, ...options.clip };
       } else {
         const info = await pageInfo();
         if ("dialog" in info) {
-          return captureScreenshot(path, { ...options, raw: true });
+          return screenshot({ ...options, path, raw: true });
         }
         params.clip = {
           x: 0,

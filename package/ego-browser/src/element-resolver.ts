@@ -536,7 +536,7 @@ function boxModelCenter(model: any = {}) {
   if (content.length < 8) {
     // Returning a fake (0,0) here would silently click the viewport corner.
     // Treat a missing/degenerate box model as "element not ready" so callers
-    // with retry semantics (waitForElement, ref fallback) can poll.
+    // with retry semantics (waitForSelector, ref fallback) can poll.
     throw new ElementResolutionError(
       "Element has no box model (not rendered or zero-sized)",
       "transient",

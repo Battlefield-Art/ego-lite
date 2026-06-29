@@ -1,4 +1,4 @@
-import { cdp, js } from "../cdp-eval.js";
+import { cdp, evaluate } from "../cdp-eval.js";
 import { browserCdp } from "../browser-runtime.js";
 import { elementCenter } from "./observe.js";
 import { resolveAndCall } from "./element-ops.js";
@@ -17,12 +17,11 @@ export type MouseTarget =
 type ClickOptions = {
   button?: MouseButton;
   clickCount?: number;
-  clicks?: number;
   label?: string;
 };
-type DragMouseOptions = {
+type DragOptions = {
   button?: MouseButton;
-  delayMs?: number;
+  delay?: number;
   label?: string;
 };
 type HoverOptions = {
@@ -81,14 +80,14 @@ const INPUT_DISPATCH_TIMEOUT_MS = 1000;
 /**
  * Click a mouse target.
  * @param {MouseTarget} target CSS selector, @ref, viewport point, or selector-relative point.
- * @param {{button?: "left"|"middle"|"right", clickCount?: number, clicks?: number, label?: string}} [options]
+ * @param {{button?: "left"|"middle"|"right", clickCount?: number, label?: string}} [options]
  * @returns {Promise<void>}
  */
 export async function click(target: MouseTarget, options: ClickOptions = {}) {
   const point = await resolveMouseTarget(target);
   const button = options.button || "left";
   const buttons = pressedButtons(button);
-  const clickCount = options.clickCount ?? options.clicks ?? 1;
+  const clickCount = options.clickCount ?? 1;
   maybeHighlight(point, options.label);
   const probeId = await installClickProbe(point);
   let dispatchError: unknown = null;
@@ -123,7 +122,7 @@ export async function click(target: MouseTarget, options: ClickOptions = {}) {
  * @param {{button?: "left"|"middle"|"right", label?: string}} [options]
  * @returns {Promise<void>}
  */
-export async function doubleClick(
+export async function dblclick(
   target: MouseTarget,
   options: ClickOptions = {},
 ) {
@@ -154,15 +153,12 @@ export async function hover(target: MouseTarget, options: HoverOptions = {}) {
 /**
  * Drag the mouse through a sequence of targets while holding a button.
  * @param {MouseTarget[]} points Ordered drag path. Must contain at least two targets.
- * @param {{button?: "left"|"middle"|"right", delayMs?: number, label?: string}} [options]
+ * @param {{button?: "left"|"middle"|"right", delay?: number, label?: string}} [options]
  * @returns {Promise<void>}
  */
-export async function dragMouse(
-  points: MouseTarget[],
-  options: DragMouseOptions = {},
-) {
+export async function drag(points: MouseTarget[], options: DragOptions = {}) {
   if (!Array.isArray(points) || points.length < 2) {
-    throw new Error("dragMouse requires at least two points");
+    throw new Error("drag requires at least two points");
   }
   const resolved: Point[] = [];
   for (const point of points) {
@@ -192,7 +188,7 @@ export async function dragMouse(
           buttons,
         },
       );
-      await inputEventDelay(options.delayMs > 0 ? options.delayMs : undefined);
+      await inputEventDelay(options.delay > 0 ? options.delay : undefined);
     }
     await dispatchMouse(
       { ...last, sessionId: last.sessionId ?? first.sessionId },
@@ -529,7 +525,7 @@ export async function scrollBy(
   options: ScrollByOptions = {},
 ) {
   const params = scrollByParams(amount, options);
-  return js(`(() => {
+  return evaluate(`(() => {
     window.scrollBy({
       left: ${JSON.stringify(params.left)},
       top: ${JSON.stringify(params.top)},
@@ -699,7 +695,7 @@ function scrollByParams(
 }
 
 async function scrollState(): Promise<ScrollState> {
-  return js(`(() => {
+  return evaluate(`(() => {
     const doc = document.documentElement;
     const body = document.body;
     const height = Math.max(
@@ -731,7 +727,7 @@ async function conditionMet(
     return Boolean(await condition(state));
   }
   if (typeof condition === "string") {
-    return Boolean(await js(`Boolean(${condition})`));
+    return Boolean(await evaluate(`Boolean(${condition})`));
   }
   throw new TypeError(
     `scrollToBottomUntil condition must be a function or string, got ${typeof condition}`,

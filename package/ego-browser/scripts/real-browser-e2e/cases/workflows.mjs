@@ -17,7 +17,7 @@ export const workflowCases = [
 
       /* Step 2: click the nav link to navigate within the current tab. */
       await click("#nav-link");
-      assert(await waitForLoad({ timeout: 10 }), "workflow: nav-target page loads");
+      assert(await waitForLoadState("load", { timeout: 10000 }), "workflow: nav-target page loads");
       const navInfo = await pageInfo();
       assertEqual(navInfo.title, "ego-lite nav target", "workflow: page title changes after navigation");
       assertIncludes(navInfo.url, "/nav-target", "workflow: URL reflects nav-target");
@@ -25,11 +25,11 @@ export const workflowCases = [
       /* Step 3: open a secondary page in a new tab. */
       const secondary = await openOrReuseTab(baseUrl + "/secondary", {
         wait: true,
-        timeout: 10,
+        timeout: 10000,
       });
       assertEqual(secondary.reused, false, "workflow: secondary tab is new");
       await switchTab(secondary);
-      const secTitle = await js("return document.title");
+      const secTitle = await evaluate("return document.title");
       assertEqual(secTitle, "ego-lite secondary", "workflow: secondary tab title is correct");
 
       /* Step 4: switch back to the nav-target tab and verify its state persisted. */
@@ -37,12 +37,12 @@ export const workflowCases = [
       const navTab = tabs.find((t) => String(t.url || "").includes("/nav-target"));
       assert(navTab, "workflow: nav-target tab still exists in tab list");
       await switchTab(navTab.targetId);
-      const navTitleAfterSwitch = await js("return document.title");
+      const navTitleAfterSwitch = await evaluate("return document.title");
       assertEqual(navTitleAfterSwitch, "ego-lite nav target", "workflow: nav-target title persists across tab switches");
 
-      /* Step 5: navigate back home via gotoUrl and verify clean state. */
-      await gotoUrl(baseUrl + "/");
-      assert(await waitForLoad({ timeout: 10 }), "workflow: home page reloads");
+      /* Step 5: navigate back home via goto and verify clean state. */
+      await goto(baseUrl + "/", { waitUntil: "commit" });
+      assert(await waitForLoadState("load", { timeout: 10000 }), "workflow: home page reloads");
       const backHomeInfo = await pageInfo();
       assertEqual(backHomeInfo.title, "ego-lite helper e2e", "workflow: home title restored after multi-tab navigation");
 
@@ -55,7 +55,7 @@ export const workflowCases = [
       do {
         remaining = await listTabs({ includeChrome: false });
         if (remaining.length < tabsBeforeClose) break;
-        await wait(0.1);
+        await waitForTimeout(100);
       } while (Date.now() < deadline);
       assert(remaining.length < tabsBeforeClose, "workflow: tab count decreased after closing secondary");
 
@@ -68,47 +68,47 @@ export const workflowCases = [
     name: "workflow form interaction chain",
     body: homeCase(`
       /* Step 1: fill a text input and verify the value. */
-      await fillInput("#text-input", "hello", { timeout: 3 });
+      await fill("#text-input", "hello", { timeout: 3000 });
       assertEqual(
-        await js("return document.querySelector('#text-input').value"),
+        await evaluate("return document.querySelector('#text-input').value"),
         "hello",
-        "workflow: fillInput sets text value"
+        "workflow: fill sets text value"
       );
 
-      /* Step 2: append more text with typeText. */
+      /* Step 2: append more text with insertText. */
       await click("#text-input");
-      await typeText(" world");
+      await insertText(" world");
       assertEqual(
-        await js("return document.querySelector('#text-input').value"),
+        await evaluate("return document.querySelector('#text-input').value"),
         "hello world",
-        "workflow: typeText appends to existing value"
+        "workflow: insertText appends to existing value"
       );
 
-      /* Step 3: select-all then overwrite using fillInput (which clears first). */
-      await fillInput("#text-input", "replaced", { timeout: 3 });
+      /* Step 3: select-all then overwrite using fill (which clears first). */
+      await fill("#text-input", "replaced", { timeout: 3000 });
       assertEqual(
-        await js("return document.querySelector('#text-input').value"),
+        await evaluate("return document.querySelector('#text-input').value"),
         "replaced",
-        "workflow: fillInput replaces entire value"
+        "workflow: fill replaces entire value"
       );
 
       /* Step 4: fill the textarea and verify independently. */
-      await fillInput("#text-area", "area content", { timeout: 3 });
+      await fill("#text-area", "area content", { timeout: 3000 });
       assertEqual(
-        await js("return document.querySelector('#text-area').value"),
+        await evaluate("return document.querySelector('#text-area').value"),
         "area content",
         "workflow: textarea value set independently"
       );
       /* Text input should not have been affected by textarea fill. */
       assertEqual(
-        await js("return document.querySelector('#text-input').value"),
+        await evaluate("return document.querySelector('#text-input').value"),
         "replaced",
         "workflow: text input unchanged after textarea fill"
       );
 
       /* Step 5: toggle checkbox and verify state. */
       assertEqual(
-        await js("return window.__fixtureState.checkboxChecked"),
+        await evaluate("return window.__fixtureState.checkboxChecked"),
         false,
         "workflow: checkbox starts unchecked"
       );
@@ -125,17 +125,17 @@ export const workflowCases = [
 
       /* Step 7: interact with dynamic DOM — add element, verify, remove, verify. */
       await click("#add-element");
-      const appeared = await waitForElement("#dynamic-element", { timeout: 3, visible: true });
+      const appeared = await waitForSelector("#dynamic-element", { timeout: 3000, state: "visible" });
       assertEqual(appeared, true, "workflow: dynamically added element becomes visible");
-      const dynText = await js("return document.querySelector('#dynamic-element')?.textContent");
+      const dynText = await evaluate("return document.querySelector('#dynamic-element')?.textContent");
       assertIncludes(dynText, "Dynamic", "workflow: dynamic element has expected text");
 
       await click("#remove-element");
-      const gone = await waitForElement("#dynamic-element", { timeout: 3 });
+      const gone = await waitForSelector("#dynamic-element", { timeout: 3000 });
       assertEqual(gone, false, "workflow: dynamically removed element disappears");
 
       /* Step 8: verify the click counter tracked only #click-button clicks (none in this workflow). */
-      const totalClicks = await js("return window.__fixtureState.clicks");
+      const totalClicks = await evaluate("return window.__fixtureState.clicks");
       assertEqual(totalClicks, 0, "workflow: click counter only tracks #click-button, not form interactions");
     `),
   },
@@ -159,7 +159,7 @@ export const workflowCases = [
 
       /* Step 3: modify the DOM, then verify the snapshot reflects the new element. */
       await click("#add-element");
-      await waitForElement("#dynamic-element", { timeout: 3, visible: true });
+      await waitForSelector("#dynamic-element", { timeout: 3000, state: "visible" });
       const textAfterAdd = await snapshotText({ scope: "full_page" });
       assertIncludes(String(textAfterAdd), "Dynamic!", "workflow: snapshot text includes dynamic element after mutation");
 
@@ -170,16 +170,16 @@ export const workflowCases = [
 
       /* Step 5: remove the dynamic element and verify the ref becomes stale. */
       await click("#remove-element");
-      await waitForElement("#dynamic-element", { timeout: 3 });
+      await waitForSelector("#dynamic-element", { timeout: 3000 });
       // The dynamic element is gone; trying to click its stale ref should
       // either fall back (if another element matches the role/name) or fail.
       // We just verify the element is truly removed.
-      const dynExists = await js("return !!document.querySelector('#dynamic-element')");
+      const dynExists = await evaluate("return !!document.querySelector('#dynamic-element')");
       assertEqual(dynExists, false, "workflow: dynamic element removed from DOM");
 
       /* Step 6: take a screenshot and verify the file is created. */
       const screenshotPath = join(artifactDir, "workflow-shot.png");
-      await captureScreenshot(screenshotPath);
+      await screenshot({ path: screenshotPath });
       const screenshotStat = await stat(screenshotPath);
       assert(screenshotStat.size > 0, "workflow: screenshot file is non-empty");
 

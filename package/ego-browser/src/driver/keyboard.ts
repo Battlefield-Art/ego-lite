@@ -1,9 +1,9 @@
 import { cdp } from "../cdp-eval.js";
 import { browserCdp } from "../browser-runtime.js";
 import { withHandle, resolveAndCall } from "./element-ops.js";
-import { waitForElement } from "./waits.js";
+import { waitForSelector } from "./waits.js";
 
-type FillInputOptions = {
+type FillOptions = {
   clearFirst?: boolean;
   timeout?: number;
 };
@@ -62,13 +62,46 @@ function editingCommandsForKey(key, modifiers) {
   return undefined;
 }
 
+const MODIFIER_BITS: Record<string, number> = {
+  Alt: 1,
+  Control: 2,
+  Meta: 4,
+  Shift: 8,
+};
+
 /**
- * Dispatch a key press through CDP.
- * @param {string} key Key name such as Enter, Tab, ArrowLeft, or a single printable character.
- * @param {number} [modifiers=0] CDP modifier bitfield: Alt=1, Ctrl=2, Meta/Cmd=4, Shift=8.
+ * Parse a Playwright-style key combo ("Control+a", "Shift+Tab") into a base key
+ * and a CDP modifier bitfield. Modifiers: Control, Shift, Alt, Meta, ControlOrMeta.
+ */
+function parseKeyCombo(combo: string) {
+  const parts = combo.split("+");
+  let key = parts.pop() ?? combo;
+  if (key === "" && parts.length > 0) {
+    key = "+"; // a trailing "+" means the literal plus key, e.g. "Shift++"
+  }
+  let modifiers = 0;
+  for (const name of parts) {
+    if (name === "ControlOrMeta") {
+      modifiers |=
+        process.platform === "darwin" ? META_MODIFIER : CTRL_MODIFIER;
+      continue;
+    }
+    const bit = MODIFIER_BITS[name];
+    if (bit === undefined) {
+      throw new Error(`press: unknown key modifier ${JSON.stringify(name)}`);
+    }
+    modifiers |= bit;
+  }
+  return { key, modifiers };
+}
+
+/**
+ * Dispatch a key press through CDP. Combine modifiers with "+".
+ * @param {string} keyCombo Key or modifier+key combo: "Enter", "a", "Control+a", "Shift+Tab". Modifiers: Control, Shift, Alt, Meta, ControlOrMeta.
  * @returns {Promise<void>}
  */
-export async function pressKey(key, modifiers = 0) {
+export async function press(keyCombo) {
+  const { key, modifiers } = parseKeyCombo(keyCombo);
   const { vk, code, text } = keyDefinition(key);
   const base = {
     key,
@@ -107,28 +140,22 @@ export async function pressKey(key, modifiers = 0) {
  * @param {string} text Text to insert.
  * @returns {Promise<void>}
  */
-export async function typeText(text) {
+export async function insertText(text) {
   await cdp("Input.insertText", { text });
 }
 
 /**
- * Focus an input, optionally clear it, type text, and fire input/change events.
+ * Focus an input, optionally clear it, write a value, and fire input/change events.
  * @param {string} selector CSS selector / @ref / loc= / xpath= for the input-like element.
- * @param {string} text Text to write.
- * @param {{clearFirst?: boolean, timeout?: number}} [options]
+ * @param {string} value Text to write.
+ * @param {{clearFirst?: boolean, timeout?: number}} [options] clearFirst defaults to true (Playwright fill always clears); clearFirst:false appends (ego-browser extension). timeout in milliseconds.
  * @returns {Promise<void>}
  */
-export async function fillInput(
-  selector,
-  text,
-  options: FillInputOptions = {},
-) {
+export async function fill(selector, value, options: FillOptions = {}) {
   const clearFirst = options.clearFirst ?? true;
   const timeout = options.timeout ?? 0;
-  if (timeout > 0 && !(await waitForElement(selector, { timeout }))) {
-    throw new Error(
-      `fillInput: element not found: ${JSON.stringify(selector)}`,
-    );
+  if (timeout > 0 && !(await waitForSelector(selector, { timeout }))) {
+    throw new Error(`fill: element not found: ${JSON.stringify(selector)}`);
   }
   await withHandle(selector, async ({ objectId, sessionId }) => {
     const focusSource = clearFirst
@@ -157,7 +184,7 @@ export async function fillInput(
         sessionId,
       );
     }
-    await cdp("Input.insertText", { text }, sessionId);
+    await cdp("Input.insertText", { text: value }, sessionId);
     await cdp(
       "Runtime.callFunctionOn",
       {
