@@ -174,6 +174,13 @@ test("wheel propagates user-control errors from the CDP dispatch", async () => {
   }
 });
 
+test("wheel rejects non-numeric deltas before dispatching", async () => {
+  // Regression: only the x/y viewport point was validated; a bad deltaX/deltaY
+  // flowed straight to CDP (string) or became a null no-op on the synthetic path.
+  await assert.rejects(() => wheel("bad"), /invalid mouse offset/);
+  await assert.rejects(() => wheel(0, "bad"), /invalid mouse offset/);
+});
+
 test("click triggers probe fallback when CDP click is not trusted", async () => {
   const originalEgo = globalThis.ego;
   globalThis.ego = { sendCDPMessage: () => {} };

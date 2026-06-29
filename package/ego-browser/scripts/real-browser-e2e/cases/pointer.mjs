@@ -76,9 +76,11 @@ export function scrollHelpersCase() {
     await resetHome();
     console.log(JSON.stringify({ pointerStep: "scroll ready" }));
 
-    // wheel() routes through CDP only while the tab is visible AND focused; an
-    // unfocused tab falls back to a synthetic WheelEvent that does not move native
-    // scrollbars, so gate the native-scroll assertions on the CDP path.
+    // wheel() routes through CDP while the tab is visible AND focused; otherwise it
+    // falls back to a synthetic WheelEvent plus window.scrollBy, which moves the page
+    // but not nested scroll containers. So the page-scroll assertion runs on both
+    // paths; the nested-container assertion stays gated on the CDP path (and logs a
+    // visible skip otherwise, rather than silently passing).
     const wheelUsesCdp = await evaluate(
       "return document.visibilityState === 'visible' && document.hasFocus();"
     );
@@ -109,6 +111,8 @@ export function scrollHelpersCase() {
         "document.querySelector('#inner-scroll').scrollTop > 0",
         "wheel targets nested scroll containers"
       );
+    } else {
+      console.log(JSON.stringify({ scrollSkip: { assertion: "wheel targets nested scroll containers", reason: "synthetic path scrolls the window, not nested containers", wheelUsesCdp, innerWheelDispatched } }));
     }
 
     await resetHome();
@@ -120,7 +124,9 @@ export function scrollHelpersCase() {
     const wheelDispatched = await allowWheelDispatch("wheel page", () =>
       wheel(0, 300, { x: wheelPoint.x, y: wheelPoint.y })
     );
-    if (wheelUsesCdp && wheelDispatched) {
+    if (wheelDispatched) {
+      // Asserted on both paths: CDP wheel and the synthetic WheelEvent + window.scrollBy
+      // fallback both move the page, so a backgrounded/unfocused tab is covered too.
       await waitForJsCondition(
         "scrollY > " + JSON.stringify(beforeWheel.sy),
         "wheel moves the page down"
@@ -173,6 +179,11 @@ export function pointerValidationCase() {
       () => wheel(0, 0, { x: "bad" }),
       "invalid mouse offset",
       "wheel validates numeric viewport coordinates"
+    );
+    await assertRejects(
+      () => wheel(0, "bad"),
+      "invalid mouse offset",
+      "wheel validates numeric scroll deltas"
     );
   `;
 }

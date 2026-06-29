@@ -447,16 +447,18 @@ export async function wheel(
 ) {
   const x = numberValue(options.x ?? 0);
   const y = numberValue(options.y ?? 0);
+  const dx = numberValue(deltaX);
+  const dy = numberValue(deltaY);
   if (await isVisibleAndFocused()) {
     await browserCdp(
       "Input.dispatchMouseEvent",
-      { type: "mouseWheel", x, y, deltaX, deltaY },
+      { type: "mouseWheel", x, y, deltaX: dx, deltaY: dy },
       undefined,
       1000,
     );
     return;
   }
-  await dispatchSyntheticWheel(x, y, deltaX, deltaY);
+  await dispatchSyntheticWheel(x, y, dx, dy);
 }
 
 /**

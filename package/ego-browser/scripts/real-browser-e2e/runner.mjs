@@ -64,13 +64,17 @@ export async function runRealBrowserE2e() {
     console.log(`-- ${name}`);
     const startedAt = Date.now();
     const marker = `EGO_NODEJS_BRIDGE_SMOKE_${Date.now()}`;
+    // The output channel is the overridden console.log. typeof console.log is always
+    // "function" (it is a Node built-in), so it cannot prove the SDK wired its sink.
+    // Two real signals cover it instead: the marker round-trip below proves console.log
+    // output reaches stdout, and helperCount > 0 proves installEgoSdk ran (it sets the
+    // console.log override and ego.helpers in the same call), so the override ran too.
     const source = `
       console.log(${JSON.stringify(marker)});
       console.log(JSON.stringify({
         egoType: typeof globalThis.ego,
         hasSendCDPMessage: typeof globalThis.ego?.sendCDPMessage,
         processVersion: process.version,
-        consoleLogType: typeof globalThis.console?.log,
         helperCount: Object.keys(globalThis.ego?.helpers || {}).length
       }));
     `;
@@ -90,7 +94,6 @@ export async function runRealBrowserE2e() {
       if (
         probe.egoType !== "object" ||
         probe.hasSendCDPMessage !== "function" ||
-        probe.consoleLogType !== "function" ||
         typeof probe.processVersion !== "string" ||
         probe.helperCount <= 0
       ) {
@@ -99,9 +102,9 @@ export async function runRealBrowserE2e() {
         );
       }
       const durationMs = Date.now() - startedAt;
-      recordResult(name, "pass", durationMs, 5);
+      recordResult(name, "pass", durationMs, 4);
       console.log(
-        `-- ${name} passed (${formatDuration(durationMs)}, 5 assertions)`,
+        `-- ${name} passed (${formatDuration(durationMs)}, 4 assertions)`,
       );
     } catch (error) {
       const durationMs = Date.now() - startedAt;
