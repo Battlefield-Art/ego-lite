@@ -37,7 +37,7 @@ The heredoc body runs as a Node.js script that controls the selected ego-browser
 - Navigation / state: `listTabs`, `openOrReuseTab`, `closeTab`, `goto`, `currentTab`, `switchTab`, `pageInfo`, `ensureRealTab`
 - Observation: `snapshot`, `screenshot`, `drainEvents`
 - Scroll / mouse: `wheel`, `scrollIntoViewIfNeeded`, `click`, `dblclick`, `hover`, `drag`
-- Keyboard & input: `insertText`, `fill`, `press`, `dispatchKey`
+- Keyboard & input: `insertText`, `fill`, `press`, `dispatchEvent`
 - File: `setInputFiles`
 - Wait: `waitForTimeout`, `waitForLoadState`, `waitForSelector`
 - Fetch: `serverFetch`, `browserFetch`

@@ -31,7 +31,7 @@ export {
   wheel,
   scrollIntoViewIfNeeded,
 } from "./driver/pointer.js";
-export { press, insertText, fill, dispatchKey } from "./driver/keyboard.js";
+export { press, insertText, fill, dispatchEvent } from "./driver/keyboard.js";
 export {
   INTERNAL_URL_PREFIXES,
   pageInfo,

@@ -33,7 +33,7 @@ export function helperSurfaceCase() {
       "press",
       "insertText",
       "fill",
-      "dispatchKey",
+      "dispatchEvent",
       "setInputFiles",
       "waitForTimeout",
       "waitForLoadState",

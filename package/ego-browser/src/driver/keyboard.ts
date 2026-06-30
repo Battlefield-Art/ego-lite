@@ -205,21 +205,59 @@ export async function fill(selector, value, options: FillOptions = {}) {
   });
 }
 
+// Page-side dispatcher, mirroring Playwright's injected dispatchEvent: the type
+// selects the event constructor and eventInit is spread onto the same defaults
+// Playwright uses. Types outside this table (input/change, touch*, custom, ...)
+// fall back to a generic Event. Kept as a string for Runtime.callFunctionOn.
+const DISPATCH_EVENT_SOURCE = `function(type, eventInit){
+  const init = { bubbles: true, cancelable: true, composed: true, ...(eventInit || {}) };
+  const category = {
+    auxclick: "mouse", click: "mouse", dblclick: "mouse", mousedown: "mouse",
+    mouseenter: "mouse", mouseleave: "mouse", mousemove: "mouse", mouseout: "mouse",
+    mouseover: "mouse", mouseup: "mouse", mousewheel: "mouse",
+    keydown: "keyboard", keyup: "keyboard", keypress: "keyboard", textInput: "keyboard",
+    pointerover: "pointer", pointerout: "pointer", pointerenter: "pointer",
+    pointerleave: "pointer", pointerdown: "pointer", pointerup: "pointer",
+    pointermove: "pointer", pointercancel: "pointer", gotpointercapture: "pointer",
+    lostpointercapture: "pointer",
+    focus: "focus", blur: "focus",
+    dragstart: "drag", drag: "drag", dragend: "drag", dragenter: "drag",
+    dragleave: "drag", dragover: "drag", dragexit: "drag", drop: "drag",
+    wheel: "wheel"
+  };
+  let event;
+  switch (category[type]) {
+    case "mouse": event = new MouseEvent(type, init); break;
+    case "keyboard": event = new KeyboardEvent(type, init); break;
+    case "pointer": event = new PointerEvent(type, init); break;
+    case "focus": event = new FocusEvent(type, init); break;
+    case "drag": event = new DragEvent(type, init); break;
+    case "wheel": event = new WheelEvent(type, init); break;
+    default: event = new Event(type, init); break;
+  }
+  this.dispatchEvent(event);
+}`;
+
 /**
- * Focus an element and dispatch a DOM KeyboardEvent in page JavaScript.
- * Note: dispatched event has isTrusted=false; some frameworks ignore it (see docs/issues/dispatchKey-synthetic-keyboard-event.md).
+ * Dispatch a synthetic DOM event on an element, mirroring Playwright's
+ * locator.dispatchEvent. The event type picks the constructor — keydown/keyup/
+ * keypress -> KeyboardEvent, click/mousedown/... -> MouseEvent, and pointer* /
+ * focus / blur / drag* / wheel -> their typed events; any other type (input,
+ * change, touch*, custom events, ...) uses a generic Event. eventInit is spread
+ * verbatim onto { bubbles: true, cancelable: true, composed: true } and passed
+ * to the constructor.
+ * Note: the dispatched event has isTrusted=false; some frameworks ignore it. For
+ * real keyboard input prefer press().
  * @param {string} selector CSS selector / @ref / loc= / xpath= for the target element.
- * @param {string} [key="Enter"] Event key.
- * @param {"keydown"|"keypress"|"keyup"|string} [event="keypress"] Event type.
+ * @param {string} type DOM event type, e.g. "keydown", "click", "input".
+ * @param {Record<string, unknown>} [eventInit={}] Event-specific init properties (key, code, clientX, ...).
  * @returns {Promise<void>}
  */
-export async function dispatchKey(selector, key = "Enter", event = "keypress") {
-  const { vk, code } = keyDefinition(key);
-  await resolveAndCall(
-    selector,
-    "function(keyCode, key, code, event){this.focus(); this.dispatchEvent(new KeyboardEvent(event,{key,code,keyCode,which:keyCode,bubbles:true}));}",
-    [vk, key, code, event],
-  );
+export async function dispatchEvent(selector, type, eventInit = {}) {
+  if (typeof type !== "string" || type === "") {
+    throw new Error("dispatchEvent requires an event type string");
+  }
+  await resolveAndCall(selector, DISPATCH_EVENT_SOURCE, [type, eventInit]);
 }
 
 function inputEventDelay() {

@@ -27,14 +27,14 @@ export function keyboardRegressionCase() {
     const xpathValue = await evaluate("return document.querySelector('#text-input').value");
     assertEqual(xpathValue, "via-xpath", "fill resolves xpath= selector (Issue 2)");
 
-    /* Issue 2: dispatchKey shares the same resolver path. */
+    /* Issue 2: dispatchEvent shares the same resolver path. */
     await evaluate("window.__fixtureState.keys = []; return true;");
-    await dispatchKey('xpath=//input[@id="text-input"]', "Enter", "keydown");
+    await dispatchEvent('xpath=//input[@id="text-input"]', "keydown", { key: "Enter" });
     const keys = await evaluate("return window.__fixtureState.keys.join(',')");
-    assertIncludes(keys, "Enter", "dispatchKey resolves xpath= selector (Issue 2)");
+    assertIncludes(keys, "Enter", "dispatchEvent resolves xpath= selector (Issue 2)");
 
     /* Issue 2: setInputFiles shares the same resolver path (the pilot covered
-       fill/dispatchKey but left setInputFiles out). */
+       fill/dispatchEvent but left setInputFiles out). */
     await setInputFiles('xpath=//input[@id="file-input"]', uploadPath);
     const xpathFile = await evaluate("return Array.from(document.querySelector('#file-input').files).map((file) => file.name).join(',')");
     assertEqual(xpathFile, "fixture-upload.txt", "setInputFiles resolves xpath= selector (Issue 2)");

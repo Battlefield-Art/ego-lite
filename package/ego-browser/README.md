@@ -67,7 +67,7 @@ src/
   driver/
     pointer.ts           click, hover, drag, wheel, scrollIntoViewIfNeeded
     observe.ts           snapshot, screenshot, elementCenter
-    keyboard.ts          insertText, press, fill, dispatchKey
+    keyboard.ts          insertText, press, fill, dispatchEvent
     nav.ts               tabs, goto, openOrReuseTab, closeTab
     load.ts              waitForDocumentLoad and load orchestration
     waits.ts             waitForTimeout, waitForLoadState, waitForSelector

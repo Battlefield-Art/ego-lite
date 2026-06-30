@@ -33,9 +33,9 @@ export function keyboardCase() {
     const activeAfterPress = await evaluate("return document.activeElement?.id || ''");
     assertEqual(activeAfterPress, "text-input", "press keeps the focused input active");
 
-    await dispatchKey("#text-input", "Escape", "keydown");
+    await dispatchEvent("#text-input", "keydown", { key: "Escape" });
     let keys = await evaluate("return window.__fixtureState.keys.join(',')");
-    assertIncludes(keys, "Escape", "dispatchKey dispatches synthetic keyboard input");
+    assertIncludes(keys, "Escape", "dispatchEvent dispatches synthetic keyboard input");
 
     await fill("#text-input", "select me", { timeout: 3000 });
     await press("ControlOrMeta+a");
@@ -65,9 +65,9 @@ export function keyboardCase() {
       "setInputFiles reports missing file inputs"
     );
     await assertRejects(
-      () => dispatchKey("#missing-input", "Enter"),
+      () => dispatchEvent("#missing-input", "keypress", { key: "Enter" }),
       "Element not found",
-      "dispatchKey reports missing targets"
+      "dispatchEvent reports missing targets"
     );
 
     /* contentEditable typing */
