@@ -13,13 +13,13 @@ export function observationCase() {
     });
     assertIncludes(compactRaw.content || "", "Helper e2e fixture", "snapshotRaw accepts compact options");
 
-    const snap = await snapshot({
+    const snap = await snapshotRaw({
       scope: "full_page",
       includeActionMarks: true,
       includeStableLocator: true,
     });
-    assertIncludes(snap.content || "", "Click counter", "snapshot contains button text");
-    assert(Array.isArray(snap.refs), "snapshot returns refs array");
+    assertIncludes(snap.content || "", "Click counter", "snapshotRaw contains button text");
+    assert(Array.isArray(snap.refs), "snapshotRaw returns refs array");
 
     const buttonRef = (snap.refs || []).find(
       (ref) =>
@@ -27,17 +27,17 @@ export function observationCase() {
         (String(ref?.name || "").includes("Increment counter") ||
           String(ref?.name || "").includes("Click counter"))
     )?.backendNodeId;
-    assert(buttonRef, "snapshot exposes a reusable backend ref for the button");
+    assert(buttonRef, "snapshotRaw exposes a reusable backend ref for the button");
     const atRefCenter = await elementCenter("@" + buttonRef);
     assert(Number.isFinite(atRefCenter.x) && Number.isFinite(atRefCenter.y), "@ref resolves to coordinates");
     const namedRefCenter = await elementCenter("ref=" + buttonRef);
     assert(Number.isFinite(namedRefCenter.x) && Number.isFinite(namedRefCenter.y), "ref= resolves to coordinates");
 
-    const text = await snapshotText({ scope: "full_page" });
-    assertIncludes(text, "Text input", "snapshotText returns text content");
+    const text = await snapshot({ scope: "full_page" });
+    assertIncludes(text, "Text input", "snapshot returns text content");
 
-    const viewportText = await snapshotText({ scope: "only_within_viewport" });
-    assertIncludes(viewportText, "Helper e2e fixture", "snapshotText supports viewport scope");
+    const viewportText = await snapshot({ scope: "only_within_viewport" });
+    assertIncludes(viewportText, "Helper e2e fixture", "snapshot supports viewport scope");
 
     const center = await elementCenter("#click-button");
     assert(Number.isFinite(center.x) && Number.isFinite(center.y), "elementCenter returns coordinates");
@@ -116,13 +116,13 @@ export function observationCase() {
     console.log(JSON.stringify({ observationStep: "dynamic DOM" }));
     await click("#remove-element");
     await waitForTimeout(100);
-    const textBefore = await snapshotText({ scope: "full_page" });
+    const textBefore = await snapshot({ scope: "full_page" });
     assert(!String(textBefore).includes("Dynamic!"), "snapshot text does not contain dynamic element before creation");
 
     await click("#add-element");
     await waitForSelector("#dynamic-element", { timeout: 3000, state: "visible" });
     await waitForTimeout(200);
-    const textAfter = await snapshotText({ scope: "full_page" });
+    const textAfter = await snapshot({ scope: "full_page" });
     assertIncludes(String(textAfter), "Dynamic!", "snapshot text includes dynamically created element");
 
     /* iframe interaction — evaluate JS inside the iframe */

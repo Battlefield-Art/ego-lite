@@ -143,7 +143,7 @@ export const workflowCases = [
     name: "workflow observation and recovery",
     body: homeCase(`
       /* Step 1: take a snapshot and capture refs for known elements. */
-      const snap1 = await snapshot({
+      const snap1 = await snapshotRaw({
         scope: "full_page",
         includeActionMarks: true,
         includeStableLocator: true,
@@ -160,7 +160,7 @@ export const workflowCases = [
       /* Step 3: modify the DOM, then verify the snapshot reflects the new element. */
       await click("#add-element");
       await waitForSelector("#dynamic-element", { timeout: 3000, state: "visible" });
-      const textAfterAdd = await snapshotText({ scope: "full_page" });
+      const textAfterAdd = await snapshot({ scope: "full_page" });
       assertIncludes(String(textAfterAdd), "Dynamic!", "workflow: snapshot text includes dynamic element after mutation");
 
       /* Step 4: use the old button ref — it should still work because the
@@ -189,12 +189,12 @@ export const workflowCases = [
       const emptyEvents = await drainEvents();
       assertEqual(emptyEvents.length, 0, "workflow: second drain returns empty buffer");
 
-      /* Step 8: take a snapshotText and verify it reflects current DOM state. */
-      const text = await snapshotText({ scope: "full_page" });
-      assertIncludes(text, "Helper e2e fixture", "workflow: snapshotText includes page heading");
+      /* Step 8: take a snapshot and verify it reflects current DOM state. */
+      const text = await snapshot({ scope: "full_page" });
+      assertIncludes(text, "Helper e2e fixture", "workflow: snapshot includes page heading");
       // Dynamic element was removed, so its text should not appear
       const hasDynamic = String(text).includes("Dynamic!");
-      assertEqual(hasDynamic, false, "workflow: snapshotText reflects removal of dynamic element");
+      assertEqual(hasDynamic, false, "workflow: snapshot reflects removal of dynamic element");
     `),
   },
 ];

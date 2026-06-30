@@ -23,7 +23,7 @@ export function homeCase(body) {
 
 export function buttonRefSetup() {
   return `
-    const snap = await snapshot({
+    const snap = await snapshotRaw({
       scope: "full_page",
       includeActionMarks: true,
       includeStableLocator: true,
@@ -33,6 +33,6 @@ export function buttonRefSetup() {
         String(ref?.role || "") === "button" &&
         String(ref?.name || "").includes("Increment counter")
     )?.backendNodeId;
-    assert(buttonRef, "snapshot exposes increment button ref");
+    assert(buttonRef, "snapshotRaw exposes increment button ref");
   `;
 }

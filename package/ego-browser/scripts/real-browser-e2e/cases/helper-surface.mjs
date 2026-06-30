@@ -21,7 +21,6 @@ export function helperSurfaceCase() {
       "iframeTarget",
       "snapshot",
       "snapshotRaw",
-      "snapshotText",
       "screenshot",
       "elementCenter",
       "drainEvents",

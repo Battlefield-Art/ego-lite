@@ -47,7 +47,6 @@ export {
 export {
   snapshot,
   snapshotRaw,
-  snapshotText,
   screenshot,
   elementCenter,
   drainEvents,

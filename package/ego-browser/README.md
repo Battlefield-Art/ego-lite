@@ -14,13 +14,13 @@ npm run build     # bundle to dist/out/index.js
 npm test          # build + tsc --noEmit + node --test
 ```
 
-The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshotText`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
+The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshot`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
 
 ```bash
 ego-browser nodejs <<'EOF'
 await useOrCreateTaskSpace('demo')
 await openOrReuseTab('https://example.com', { wait: true })
-console.log(await snapshotText())
+console.log(await snapshot())
 EOF
 ```
 

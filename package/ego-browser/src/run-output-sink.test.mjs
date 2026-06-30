@@ -142,7 +142,7 @@ test("a swallowed snapshot hard stop (rejected, not resolved) also collapses to 
       for (const site of ["a", "b", "c"]) {
         console.log("visiting " + site);
         try {
-          await snapshotText();
+          await snapshot();
           console.log("ok " + site);
         } catch (e) {
           console.log("failed " + site + ": " + e.message);
