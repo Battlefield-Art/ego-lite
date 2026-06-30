@@ -485,6 +485,8 @@ async function isVisibleAndFocused() {
  * would be dropped. The WheelEvent triggers page wheel handlers (virtualized
  * lists, custom scrollers); the window.scrollBy actually moves an ordinary page,
  * since an untrusted WheelEvent does not perform the default scroll action.
+ * The manual scroll is skipped when a handler calls preventDefault(), matching
+ * how a real CDP wheel leaves the page in place (maps, canvases, custom scrollers).
  */
 async function dispatchSyntheticWheel(
   x: number,
@@ -496,7 +498,7 @@ async function dispatchSyntheticWheel(
     const target = document.elementFromPoint(${JSON.stringify(x)}, ${JSON.stringify(y)})
       || document.scrollingElement || document.body;
     if (!target) return;
-    target.dispatchEvent(new WheelEvent("wheel", {
+    const notPrevented = target.dispatchEvent(new WheelEvent("wheel", {
       bubbles: true,
       cancelable: true,
       deltaX: ${JSON.stringify(deltaX)},
@@ -504,7 +506,9 @@ async function dispatchSyntheticWheel(
       clientX: ${JSON.stringify(x)},
       clientY: ${JSON.stringify(y)}
     }));
-    window.scrollBy(${JSON.stringify(deltaX)}, ${JSON.stringify(deltaY)});
+    if (notPrevented) {
+      window.scrollBy(${JSON.stringify(deltaX)}, ${JSON.stringify(deltaY)});
+    }
   })()`);
 }
 
