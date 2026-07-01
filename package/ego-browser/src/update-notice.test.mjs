@@ -30,6 +30,7 @@ test("composeNotice renders an available update with prefix, versions, and hint"
   assert.match(line, /ego lite 0\.4\.4\.0 is available/);
   assert.match(line, /current 0\.4\.3\.0/);
   assert.match(line, /await upgradeBrowser\(\)/);
+  assert.match(line, /re-read the ego-browser skill/);
 });
 
 test("composeNotice marks a mandatory update as required", () => {

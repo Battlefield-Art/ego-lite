@@ -68,7 +68,7 @@ export function composeNotice(
       ? `ego lite ${info.latestVersion}`
       : "an ego lite update";
   const urgency = info.mandatory ? "is required" : "is available";
-  return `${NOTICE_PREFIX} ${target} ${urgency} (current ${info.currentVersion}) — run: await upgradeBrowser()`;
+  return `${NOTICE_PREFIX} ${target} ${urgency} (current ${info.currentVersion}) — run: await upgradeBrowser(), then re-read the ego-browser skill`;
 }
 
 /**
