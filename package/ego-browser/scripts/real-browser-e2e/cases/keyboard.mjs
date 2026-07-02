@@ -3,89 +3,88 @@ export function keyboardCase() {
     await useOrCreateTaskSpace(taskName);
     await resetHome();
 
-    await fillInput("#text-input", "filled", { timeout: 3 });
-    let value = await js("return document.querySelector('#text-input').value");
-    assertEqual(value, "filled", "fillInput writes text");
+    await fill("#text-input", "filled", { timeout: 3000 });
+    let value = await evaluate("return document.querySelector('#text-input').value");
+    assertEqual(value, "filled", "fill writes text");
 
-    await fillInput("loc=css:#text-area", "area text", { timeout: 3 });
-    const areaValue = await js("return document.querySelector('#text-area').value");
-    assertEqual(areaValue, "area text", "fillInput supports textarea through loc=css");
+    await fill("loc=css:#text-area", "area text", { timeout: 3000 });
+    const areaValue = await evaluate("return document.querySelector('#text-area').value");
+    assertEqual(areaValue, "area text", "fill supports textarea through loc=css");
 
-    await js("const el = document.querySelector('#append-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
-    await fillInput("#append-input", "-suffix", { clearFirst: false, timeout: 3 });
-    const appended = await js("return document.querySelector('#append-input').value");
-    assertEqual(appended, "base-suffix", "fillInput clearFirst:false preserves existing input value");
+    await evaluate("const el = document.querySelector('#append-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
+    await fill("#append-input", "-suffix", { clearFirst: false, timeout: 3000 });
+    const appended = await evaluate("return document.querySelector('#append-input').value");
+    assertEqual(appended, "base-suffix", "fill clearFirst:false preserves existing input value");
 
-    await js("return document.querySelector('#text-input').focus()");
-    await typeText(" text");
-    value = await js("return document.querySelector('#text-input').value");
-    assertEqual(value, "filled text", "typeText appends focused text");
+    await evaluate("return document.querySelector('#text-input').focus()");
+    await insertText(" text");
+    value = await evaluate("return document.querySelector('#text-input').value");
+    assertEqual(value, "filled text", "insertText appends focused text");
 
-    await fillInput("#text-input", "abc", { timeout: 3 });
-    await js("const el = document.querySelector('#text-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
-    await pressKey("Backspace");
+    await fill("#text-input", "abc", { timeout: 3000 });
+    await evaluate("const el = document.querySelector('#text-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
+    await press("Backspace");
     await waitForJsValue(
       "document.querySelector('#text-input').value",
       "ab",
-      "pressKey Backspace edits the focused input",
+      "press Backspace edits the focused input",
       "window.__fixtureState.keyEvents"
     );
-    const activeAfterPress = await js("return document.activeElement?.id || ''");
-    assertEqual(activeAfterPress, "text-input", "pressKey keeps the focused input active");
+    const activeAfterPress = await evaluate("return document.activeElement?.id || ''");
+    assertEqual(activeAfterPress, "text-input", "press keeps the focused input active");
 
-    await dispatchKey("#text-input", "Escape", "keydown");
-    let keys = await js("return window.__fixtureState.keys.join(',')");
-    assertIncludes(keys, "Escape", "dispatchKey dispatches synthetic keyboard input");
+    await dispatchEvent("#text-input", "keydown", { key: "Escape" });
+    let keys = await evaluate("return window.__fixtureState.keys.join(',')");
+    assertIncludes(keys, "Escape", "dispatchEvent dispatches synthetic keyboard input");
 
-    await fillInput("#text-input", "select me", { timeout: 3 });
-    const selectAllModifier = process.platform === "darwin" ? 4 : 2;
-    await pressKey("a", selectAllModifier);
-    await typeText("selected");
+    await fill("#text-input", "select me", { timeout: 3000 });
+    await press("ControlOrMeta+a");
+    await insertText("selected");
     await waitForJsValue(
       "document.querySelector('#text-input').value",
       "selected",
-      "pressKey supports platform select-all modifiers"
+      "press supports platform select-all modifiers"
     );
 
-    await uploadFile("#file-input", uploadPath);
-    let fileName = await js("return Array.from(document.querySelector('#file-input').files).map((file) => file.name).join(',')");
-    assertEqual(fileName, "fixture-upload.txt", "uploadFile attaches a single file");
+    await setInputFiles("#file-input", uploadPath);
+    let fileName = await evaluate("return Array.from(document.querySelector('#file-input').files).map((file) => file.name).join(',')");
+    assertEqual(fileName, "fixture-upload.txt", "setInputFiles attaches a single file");
 
-    await uploadFile("#file-input", [uploadPath, uploadPathTwo]);
-    fileName = await js("return Array.from(document.querySelector('#file-input').files).map((file) => file.name).join(',')");
-    assertEqual(fileName, "fixture-upload.txt,fixture-upload-two.txt", "uploadFile attaches multiple files");
+    await setInputFiles("#file-input", [uploadPath, uploadPathTwo]);
+    fileName = await evaluate("return Array.from(document.querySelector('#file-input').files).map((file) => file.name).join(',')");
+    assertEqual(fileName, "fixture-upload.txt,fixture-upload-two.txt", "setInputFiles attaches multiple files");
 
     await assertRejects(
-      () => fillInput("#missing-input", "nope", { timeout: 0.2 }),
+      () => fill("#missing-input", "nope", { timeout: 200 }),
       "element not found",
-      "fillInput reports missing elements"
+      "fill reports missing elements"
     );
     await assertRejects(
-      () => uploadFile("#missing-file-input", uploadPath),
+      () => setInputFiles("#missing-file-input", uploadPath),
       "Element not found",
-      "uploadFile reports missing file inputs"
+      "setInputFiles reports missing file inputs"
     );
     await assertRejects(
-      () => dispatchKey("#missing-input", "Enter"),
+      () => dispatchEvent("#missing-input", "keypress", { key: "Enter" }),
       "Element not found",
-      "dispatchKey reports missing targets"
+      "dispatchEvent reports missing targets"
     );
 
     /* contentEditable typing */
-    cliLog(JSON.stringify({ keyboardStep: "contentEditable" }));
+    console.log(JSON.stringify({ keyboardStep: "contentEditable" }));
     await click("#rich-editor");
-    await js("document.querySelector('#rich-editor').focus(); document.querySelector('#rich-editor').textContent = ''; return true;");
-    await typeText("hello world");
-    const editorText = await js("return document.querySelector('#rich-editor').textContent");
-    assertIncludes(editorText, "hello world", "typeText inserts text into contentEditable element");
+    await evaluate("document.querySelector('#rich-editor').focus(); document.querySelector('#rich-editor').textContent = ''; return true;");
+    await insertText("hello world");
+    const editorText = await evaluate("return document.querySelector('#rich-editor').textContent");
+    assertIncludes(editorText, "hello world", "insertText inserts text into contentEditable element");
 
     /* rapid Backspace sequence */
-    cliLog(JSON.stringify({ keyboardStep: "rapid backspace" }));
-    await fillInput("#text-input", "test", { timeout: 3 });
-    await js("const el = document.querySelector('#text-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
-    await pressKey("Backspace");
-    await pressKey("Backspace");
-    await pressKey("Backspace");
+    console.log(JSON.stringify({ keyboardStep: "rapid backspace" }));
+    await fill("#text-input", "test", { timeout: 3000 });
+    await evaluate("const el = document.querySelector('#text-input'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return el.value");
+    await press("Backspace");
+    await press("Backspace");
+    await press("Backspace");
     await waitForJsValue(
       "document.querySelector('#text-input').value",
       "t",

@@ -5,7 +5,7 @@ import {
   browserCdp,
   invalidateSession,
 } from "../../dist/src/browser-runtime.js";
-import { captureScreenshot } from "../../dist/src/driver/observe.js";
+import { screenshot } from "../../dist/src/driver/observe.js";
 import { setOverrides } from "../../dist/src/state.js";
 
 function withCdpRuntime(fn) {
@@ -59,7 +59,7 @@ function withCdpRuntime(fn) {
     });
 }
 
-test("captureScreenshot skips page metric JavaScript while a native dialog is pending", async () => {
+test("screenshot skips page metric JavaScript while a native dialog is pending", async () => {
   const writes = [];
   const restore = setOverrides({
     async writeFile(path, data) {
@@ -76,16 +76,16 @@ test("captureScreenshot skips page metric JavaScript while a native dialog is pe
       });
       sent.length = 0;
 
-      await captureScreenshot("/tmp/ego-browser-dialog-shot.png");
+      await screenshot({ path: "/tmp/ego-browser-dialog-shot.png" });
 
       assert.equal(
         sent.some((request) => request.method === "Runtime.evaluate"),
         false,
       );
-      const screenshot = sent.find(
+      const shot = sent.find(
         (request) => request.method === "Page.captureScreenshot",
       );
-      assert.deepEqual(screenshot.params, {
+      assert.deepEqual(shot.params, {
         format: "png",
         captureBeyondViewport: false,
       });

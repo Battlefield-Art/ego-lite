@@ -123,7 +123,7 @@ test("taskspace e2e creates and selects a missing task space", async () => {
     ego,
     `
     const task = await useOrCreateTaskSpace("checkout-flow");
-    cliLog(JSON.stringify({ task, selected: ego.selectedId }));
+    console.log(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
 
@@ -160,7 +160,7 @@ test("taskspace e2e reuses an existing agent-owned task space", async () => {
     ego,
     `
     const task = await useOrCreateTaskSpace(7);
-    cliLog(JSON.stringify({ task, selected: ego.selectedId }));
+    console.log(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
 
@@ -192,7 +192,7 @@ test("taskspace e2e claims and selects an existing user-owned task space", async
     ego,
     `
     const task = await claimTaskSpace("checkout-flow");
-    cliLog(JSON.stringify({ task, selected: ego.selectedId }));
+    console.log(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
 
@@ -240,7 +240,7 @@ test("taskspace e2e exposes newTaskSpace and claimTaskSpace as helpers", async (
   const result = await runTaskspaceScript(
     ego,
     `
-    cliLog(JSON.stringify({
+    console.log(JSON.stringify({
       newType: typeof newTaskSpace,
       switchType: typeof switchTaskSpace,
       claimType: typeof claimTaskSpace,
@@ -263,7 +263,7 @@ test("cli e2e exposes the unified helperContext surface (help present, internals
   const result = await runTaskspaceScript(
     ego,
     `
-    cliLog(JSON.stringify({
+    console.log(JSON.stringify({
       helpType: typeof help,
       helpResultType: typeof help("click"),
       newTabType: typeof newTab,

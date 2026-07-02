@@ -2,50 +2,62 @@ import { state } from "../state.js";
 import { cdp } from "../cdp-eval.js";
 import { resolveHandle, releaseHandle } from "./element-ops.js";
 import { ElementResolutionError } from "../element-resolver.js";
-import { type WaitForLoadOptions, waitForDocumentLoad } from "./load.js";
+import { waitForDocumentLoad } from "./load.js";
 import { drainEvents } from "./observe.js";
 
-type WaitForElementOptions = {
+type WaitForSelectorOptions = {
   timeout?: number;
-  visible?: boolean;
+  state?: "visible" | "attached";
 };
 
-type WaitForNetworkIdleOptions = {
+type WaitForLoadStateOptions = {
   timeout?: number;
   idleMs?: number;
 };
 
 /**
- * Sleep for a fixed number of seconds.
- * @param {number} [seconds=1.0] Seconds to wait.
+ * Sleep for a fixed number of milliseconds.
+ * @param {number} [ms=1000] Milliseconds to wait.
  * @returns {Promise<void>}
  */
-export async function wait(seconds = 1.0) {
-  await state.sleep(seconds * 1000);
+export async function waitForTimeout(ms = 1000) {
+  await state.sleep(ms);
 }
 
 /**
- * Wait until document.readyState is complete.
- * @param {{timeout?: number}} [options]
- * @returns {Promise<boolean>} True when loaded before timeout.
+ * Wait for a page load state. `"networkidle"` waits until network traffic goes
+ * idle; `"domcontentloaded"` until the DOM is interactive; otherwise until
+ * document.readyState is complete.
+ * @param {"load"|"domcontentloaded"|"networkidle"} [loadState="load"] Load state to wait for.
+ * @param {{timeout?: number, idleMs?: number}} [options] timeout in milliseconds; idleMs only applies to "networkidle".
+ * @returns {Promise<boolean>} True when the state was reached before timeout.
  */
-export async function waitForLoad(options: WaitForLoadOptions = {}) {
-  return waitForDocumentLoad(options);
+export async function waitForLoadState(
+  loadState: "load" | "domcontentloaded" | "networkidle" = "load",
+  options: WaitForLoadStateOptions = {},
+) {
+  if (loadState === "networkidle") {
+    return waitForNetworkIdle(options);
+  }
+  return waitForDocumentLoad({
+    timeout: options.timeout,
+    until: loadState === "domcontentloaded" ? "domcontentloaded" : "load",
+  });
 }
 
 /**
  * Wait until an element exists, optionally requiring visibility.
  * @param {string} selector CSS selector / @ref / loc= / xpath= to poll.
- * @param {{timeout?: number, visible?: boolean}} [options]
+ * @param {{timeout?: number, state?: "visible"|"attached"}} [options] timeout in milliseconds; state defaults to "attached".
  * @returns {Promise<boolean>} True when found before timeout.
  */
-export async function waitForElement(
+export async function waitForSelector(
   selector: string,
-  options: WaitForElementOptions = {},
+  options: WaitForSelectorOptions = {},
 ) {
-  const timeout = options.timeout ?? 10.0;
-  const visible = options.visible ?? false;
-  const deadline = state.now() + timeout * 1000;
+  const timeout = options.timeout ?? 10000;
+  const requireVisible = options.state === "visible";
+  const deadline = state.now() + timeout;
   const visibilityFn =
     "function(){if(typeof this.checkVisibility==='function')return this.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});const s=getComputedStyle(this);return s.display!=='none'&&s.visibility!=='hidden'&&s.opacity!=='0';}";
   while (state.now() < deadline) {
@@ -60,7 +72,7 @@ export async function waitForElement(
       throw err; // permanent (bad selector / ambiguous) or unknown error — fail loud.
     }
     try {
-      if (!visible) return true;
+      if (!requireVisible) return true;
       const response = await cdp(
         "Runtime.callFunctionOn",
         {
@@ -83,22 +95,21 @@ export async function waitForElement(
 }
 
 /**
- * Wait until network events are idle.
+ * Wait until network events are idle. Module-private; reachable through
+ * waitForLoadState("networkidle").
  * Enables the CDP Network domain for the duration of the wait so that network
  * events are actually delivered (previously nothing enabled the domain, so this
  * could report "idle" without ever observing traffic). If the caller had
  * already enabled the domain, it is left enabled on return. Best-effort: if
  * the runtime does not deliver Network events, an idle window of idleMs still
  * resolves true.
- * @param {{timeout?: number, idleMs?: number}} [options]
+ * @param {{timeout?: number, idleMs?: number}} [options] timeout & idleMs in milliseconds.
  * @returns {Promise<boolean>} True when idle before timeout.
  */
-export async function waitForNetworkIdle(
-  options: WaitForNetworkIdleOptions = {},
-) {
-  const timeout = options.timeout ?? 10.0;
+async function waitForNetworkIdle(options: WaitForLoadStateOptions = {}) {
+  const timeout = options.timeout ?? 10000;
   const idleMs = options.idleMs ?? 500;
-  const deadline = state.now() + timeout * 1000;
+  const deadline = state.now() + timeout;
   let lastActivity = state.now();
   const inflight = new Set();
   const ownsNetworkDomain = !state.networkDomainEnabled;

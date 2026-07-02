@@ -26,6 +26,8 @@ type InstallTarget = Record<string, unknown> & {
 type InstallEgoSdkOptions = {
   context?: Record<string, unknown>;
   ready?: unknown;
+  // Host-provided output sink, bound to console.log (the agent's output channel).
+  // When omitted, the buffered default is used and flushed on process teardown.
   cliLog?: HelperFunction;
 };
 
@@ -72,16 +74,13 @@ export function installEgoSdk(
     });
     installed[name] = exposed as HelperFunction;
   }
-  const usingDefaultCliLog = !options.cliLog;
-  const cliLogFn = options.cliLog || createCliLog();
-  Object.defineProperty(target, "cliLog", {
-    value: cliLogFn,
-    writable: true,
-    configurable: true,
-    enumerable: false,
-  });
-  installed.cliLog = cliLogFn;
-  if (usingDefaultCliLog) {
+  const usingDefaultLog = !options.cliLog;
+  // The agent's primary output channel is console.log. Route it through the host's
+  // sink (options.cliLog) when provided, otherwise the buffered default. There is no
+  // dedicated cliLog global anymore; console.error/warn are left untouched. Each
+  // heredoc runs in its own short-lived process, so overriding the global is per-run.
+  console.log = options.cliLog || createBufferedLog();
+  if (usingDefaultLog) {
     // SDK path: the host runs each heredoc in a fresh short-lived process and never
     // calls execute(), so reset the per-run sink and flush it on process teardown.
     resetSink();
@@ -119,7 +118,7 @@ if (isDirectCli()) {
   installEgoSdk();
 }
 
-function createCliLog() {
+function createBufferedLog() {
   return (...args: unknown[]) => {
     // Buffer instead of writing through: a hard stop later in the run must be able to
     // discard everything logged so far. The buffer is flushed on process teardown.

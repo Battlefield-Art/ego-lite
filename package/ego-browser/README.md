@@ -14,13 +14,13 @@ npm run build     # bundle to dist/out/index.js
 npm test          # build + tsc --noEmit + node --test
 ```
 
-The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshotText`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
+The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshot`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
 
 ```bash
 ego-browser nodejs <<'EOF'
 await useOrCreateTaskSpace('demo')
 await openOrReuseTab('https://example.com', { wait: true })
-cliLog(await snapshotText())
+console.log(await snapshot())
 EOF
 ```
 
@@ -28,7 +28,7 @@ Local invocation without the browser (for debugging the helper bundle itself) re
 
 ```bash
 node dist/out/index.js <<'JS'
-cliLog(await pageInfo())
+console.log(await pageInfo())
 JS
 ```
 
@@ -46,7 +46,7 @@ Override with `EGO_BROWSER_AGENT_WORKSPACE`:
 
 ```bash
 EGO_BROWSER_AGENT_WORKSPACE=/path/to/skill ego-browser nodejs <<'EOF'
-cliLog(await siteSkills())
+console.log(await siteSkills())
 EOF
 ```
 
@@ -65,15 +65,15 @@ src/
   browser-runtime.ts     bridge to globalThis.ego (CDP, sessions, events)
   element-resolver.ts    resolves @eN / CSS / XPath / ARIA targets
   driver/
-    pointer.ts           click, hover, drag, scroll, scrollBy
-    observe.ts           snapshot, captureScreenshot, elementCenter
-    keyboard.ts          typeText, pressKey, fillInput, dispatchKey
-    nav.ts               tabs, gotoUrl, openOrReuseTab, closeTab
-    load.ts              waitForLoad and load orchestration
-    waits.ts             waitForElement, waitForNetworkIdle, wait
-    files.ts             uploadFile
+    pointer.ts           click, hover, drag, wheel, scrollIntoViewIfNeeded
+    observe.ts           snapshot, screenshot, elementCenter
+    keyboard.ts          insertText, press, fill, dispatchEvent
+    nav.ts               tabs, goto, openOrReuseTab, closeTab
+    load.ts              waitForDocumentLoad and load orchestration
+    waits.ts             waitForTimeout, waitForLoadState, waitForSelector
+    files.ts             setInputFiles
   http.ts                serverFetch, browserFetch
-  cdp-eval.ts            cdp() and js() raw eval
+  cdp-eval.ts            cdp() and evaluate() raw eval
   learning/              site-learnings discovery and manifest validation
 scripts/
   build.mjs              esbuild bundling

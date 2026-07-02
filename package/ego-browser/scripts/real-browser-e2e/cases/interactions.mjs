@@ -8,7 +8,7 @@ export const interactionsCases = [
          in the ego-lite browser. Simulate the full pointer event lifecycle via
          JS to verify the fixture handlers and state tracking work correctly. */
 
-      const pointerResult = await js(\`(() => {
+      const pointerResult = await evaluate(\`(() => {
         const area = document.querySelector("#pointer-area");
         const rect = area.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
@@ -45,7 +45,7 @@ export const interactionsCases = [
       /* Verify that pressure values are tracked correctly across different
          pointer event phases (hover=0, active=0.5). */
 
-      const pressureResult = await js(\`(() => {
+      const pressureResult = await evaluate(\`(() => {
         const area = document.querySelector("#pointer-area");
         const rect = area.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
@@ -75,7 +75,7 @@ export const interactionsCases = [
          Simulate the full event sequence via JS to verify the fixture handlers
          and state tracking work correctly. */
 
-      const dndResult = await js(\`(() => {
+      const dndResult = await evaluate(\`(() => {
         const source = document.querySelector("#dnd-source");
         const target = document.querySelector("#dnd-target");
         const dt = new DataTransfer();
@@ -119,7 +119,7 @@ export const interactionsCases = [
       /* Simulate a cancelled drag: dragstart fires but no drop target receives
          the drop event, then dragend fires. */
 
-      await js(\`(() => {
+      await evaluate(\`(() => {
         const source = document.querySelector("#dnd-source");
         const dt = new DataTransfer();
         source.dispatchEvent(new DragEvent("dragstart", {
@@ -131,11 +131,11 @@ export const interactionsCases = [
       })()\`);
 
       assertEqual(
-        await js("return window.__fixtureState.dndDropped"),
+        await evaluate("return window.__fixtureState.dndDropped"),
         false,
         "cancelled drag leaves dndDropped as false"
       );
-      const statusText = await js("return document.querySelector('#dnd-status').textContent");
+      const statusText = await evaluate("return document.querySelector('#dnd-status').textContent");
       assertIncludes(statusText, "cancelled", "dnd status shows drag cancelled");
     `),
   },

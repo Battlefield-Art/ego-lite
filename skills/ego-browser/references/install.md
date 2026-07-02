@@ -49,7 +49,7 @@ Once the command exists, verify the runtime with a minimal heredoc:
 
 ```bash
 ego-browser nodejs <<'EOF'
-cliLog('ego-browser ready')
+console.log('ego-browser ready')
 EOF
 ```
 

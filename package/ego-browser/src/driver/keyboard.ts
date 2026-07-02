@@ -1,9 +1,9 @@
 import { cdp } from "../cdp-eval.js";
 import { browserCdp } from "../browser-runtime.js";
 import { withHandle, resolveAndCall } from "./element-ops.js";
-import { waitForElement } from "./waits.js";
+import { waitForSelector } from "./waits.js";
 
-type FillInputOptions = {
+type FillOptions = {
   clearFirst?: boolean;
   timeout?: number;
 };
@@ -62,13 +62,52 @@ function editingCommandsForKey(key, modifiers) {
   return undefined;
 }
 
+const MODIFIER_BITS: Record<string, number> = {
+  Alt: 1,
+  Control: 2,
+  Meta: 4,
+  Shift: 8,
+};
+
 /**
- * Dispatch a key press through CDP.
- * @param {string} key Key name such as Enter, Tab, ArrowLeft, or a single printable character.
- * @param {number} [modifiers=0] CDP modifier bitfield: Alt=1, Ctrl=2, Meta/Cmd=4, Shift=8.
+ * Parse a Playwright-style key combo ("Control+a", "Shift+Tab") into a base key
+ * and a CDP modifier bitfield. Modifiers: Control, Shift, Alt, Meta, ControlOrMeta.
+ */
+function parseKeyCombo(combo: string) {
+  const parts = combo.split("+");
+  let key = parts.pop() ?? combo;
+  if (key === "" && parts.length > 0) {
+    // A trailing "+" denotes the literal plus key, e.g. "+", "Shift++". split()
+    // turns that "+" into two empty segments; the pop above consumed one, so
+    // drop the remaining empty slot too instead of reading it as a modifier.
+    key = "+";
+    if (parts[parts.length - 1] === "") {
+      parts.pop();
+    }
+  }
+  let modifiers = 0;
+  for (const name of parts) {
+    if (name === "ControlOrMeta") {
+      modifiers |=
+        process.platform === "darwin" ? META_MODIFIER : CTRL_MODIFIER;
+      continue;
+    }
+    const bit = MODIFIER_BITS[name];
+    if (bit === undefined) {
+      throw new Error(`press: unknown key modifier ${JSON.stringify(name)}`);
+    }
+    modifiers |= bit;
+  }
+  return { key, modifiers };
+}
+
+/**
+ * Dispatch a key press through CDP. Combine modifiers with "+".
+ * @param {string} keyCombo Key or modifier+key combo: "Enter", "a", "Control+a", "Shift+Tab". Modifiers: Control, Shift, Alt, Meta, ControlOrMeta.
  * @returns {Promise<void>}
  */
-export async function pressKey(key, modifiers = 0) {
+export async function press(keyCombo) {
+  const { key, modifiers } = parseKeyCombo(keyCombo);
   const { vk, code, text } = keyDefinition(key);
   const base = {
     key,
@@ -107,28 +146,22 @@ export async function pressKey(key, modifiers = 0) {
  * @param {string} text Text to insert.
  * @returns {Promise<void>}
  */
-export async function typeText(text) {
+export async function insertText(text) {
   await cdp("Input.insertText", { text });
 }
 
 /**
- * Focus an input, optionally clear it, type text, and fire input/change events.
+ * Focus an input, optionally clear it, write a value, and fire input/change events.
  * @param {string} selector CSS selector / @ref / loc= / xpath= for the input-like element.
- * @param {string} text Text to write.
- * @param {{clearFirst?: boolean, timeout?: number}} [options]
+ * @param {string} value Text to write.
+ * @param {{clearFirst?: boolean, timeout?: number}} [options] clearFirst defaults to true (Playwright fill always clears); clearFirst:false appends (ego-browser extension). timeout in milliseconds.
  * @returns {Promise<void>}
  */
-export async function fillInput(
-  selector,
-  text,
-  options: FillInputOptions = {},
-) {
+export async function fill(selector, value, options: FillOptions = {}) {
   const clearFirst = options.clearFirst ?? true;
   const timeout = options.timeout ?? 0;
-  if (timeout > 0 && !(await waitForElement(selector, { timeout }))) {
-    throw new Error(
-      `fillInput: element not found: ${JSON.stringify(selector)}`,
-    );
+  if (timeout > 0 && !(await waitForSelector(selector, { timeout }))) {
+    throw new Error(`fill: element not found: ${JSON.stringify(selector)}`);
   }
   await withHandle(selector, async ({ objectId, sessionId }) => {
     const focusSource = clearFirst
@@ -157,7 +190,7 @@ export async function fillInput(
         sessionId,
       );
     }
-    await cdp("Input.insertText", { text }, sessionId);
+    await cdp("Input.insertText", { text: value }, sessionId);
     await cdp(
       "Runtime.callFunctionOn",
       {
@@ -172,21 +205,59 @@ export async function fillInput(
   });
 }
 
+// Page-side dispatcher, mirroring Playwright's injected dispatchEvent: the type
+// selects the event constructor and eventInit is spread onto the same defaults
+// Playwright uses. Types outside this table (input/change, touch*, custom, ...)
+// fall back to a generic Event. Kept as a string for Runtime.callFunctionOn.
+const DISPATCH_EVENT_SOURCE = `function(type, eventInit){
+  const init = { bubbles: true, cancelable: true, composed: true, ...(eventInit || {}) };
+  const category = {
+    auxclick: "mouse", click: "mouse", dblclick: "mouse", mousedown: "mouse",
+    mouseenter: "mouse", mouseleave: "mouse", mousemove: "mouse", mouseout: "mouse",
+    mouseover: "mouse", mouseup: "mouse", mousewheel: "mouse",
+    keydown: "keyboard", keyup: "keyboard", keypress: "keyboard", textInput: "keyboard",
+    pointerover: "pointer", pointerout: "pointer", pointerenter: "pointer",
+    pointerleave: "pointer", pointerdown: "pointer", pointerup: "pointer",
+    pointermove: "pointer", pointercancel: "pointer", gotpointercapture: "pointer",
+    lostpointercapture: "pointer",
+    focus: "focus", blur: "focus",
+    dragstart: "drag", drag: "drag", dragend: "drag", dragenter: "drag",
+    dragleave: "drag", dragover: "drag", dragexit: "drag", drop: "drag",
+    wheel: "wheel"
+  };
+  let event;
+  switch (category[type]) {
+    case "mouse": event = new MouseEvent(type, init); break;
+    case "keyboard": event = new KeyboardEvent(type, init); break;
+    case "pointer": event = new PointerEvent(type, init); break;
+    case "focus": event = new FocusEvent(type, init); break;
+    case "drag": event = new DragEvent(type, init); break;
+    case "wheel": event = new WheelEvent(type, init); break;
+    default: event = new Event(type, init); break;
+  }
+  this.dispatchEvent(event);
+}`;
+
 /**
- * Focus an element and dispatch a DOM KeyboardEvent in page JavaScript.
- * Note: dispatched event has isTrusted=false; some frameworks ignore it (see docs/issues/dispatchKey-synthetic-keyboard-event.md).
+ * Dispatch a synthetic DOM event on an element, mirroring Playwright's
+ * locator.dispatchEvent. The event type picks the constructor — keydown/keyup/
+ * keypress -> KeyboardEvent, click/mousedown/... -> MouseEvent, and pointer* /
+ * focus / blur / drag* / wheel -> their typed events; any other type (input,
+ * change, touch*, custom events, ...) uses a generic Event. eventInit is spread
+ * verbatim onto { bubbles: true, cancelable: true, composed: true } and passed
+ * to the constructor.
+ * Note: the dispatched event has isTrusted=false; some frameworks ignore it. For
+ * real keyboard input prefer press().
  * @param {string} selector CSS selector / @ref / loc= / xpath= for the target element.
- * @param {string} [key="Enter"] Event key.
- * @param {"keydown"|"keypress"|"keyup"|string} [event="keypress"] Event type.
+ * @param {string} type DOM event type, e.g. "keydown", "click", "input".
+ * @param {Record<string, unknown>} [eventInit={}] Event-specific init properties (key, code, clientX, ...).
  * @returns {Promise<void>}
  */
-export async function dispatchKey(selector, key = "Enter", event = "keypress") {
-  const { vk, code } = keyDefinition(key);
-  await resolveAndCall(
-    selector,
-    "function(keyCode, key, code, event){this.focus(); this.dispatchEvent(new KeyboardEvent(event,{key,code,keyCode,which:keyCode,bubbles:true}));}",
-    [vk, key, code, event],
-  );
+export async function dispatchEvent(selector, type, eventInit = {}) {
+  if (typeof type !== "string" || type === "") {
+    throw new Error("dispatchEvent requires an event type string");
+  }
+  await resolveAndCall(selector, DISPATCH_EVENT_SOURCE, [type, eventInit]);
 }
 
 function inputEventDelay() {
