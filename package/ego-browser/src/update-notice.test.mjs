@@ -173,11 +173,21 @@ test("updateNoticeLine swallows a throwing source", async () => {
 
 test("updateNoticeLine gives up (null) when the source never resolves", async () => {
   // A stuck bridge must not leave the check pending forever; the timeout bounds it.
-  const source = () => new Promise(() => {});
-  assert.equal(
-    await updateNoticeLine({ source, env: {}, timeoutMs: 10 }),
-    null,
-  );
+  // The timeout timer is unref'd (so it can never keep a real process alive on its own),
+  // which means it only fires while the loop is otherwise busy — exactly a live run's
+  // condition. This ref'd interval reproduces that busy loop so the unref'd timeout can
+  // fire; without it the test process would drain before the timeout and the await would
+  // hang ("Promise resolution is still pending but the event loop has already resolved").
+  const keepLoopAlive = setInterval(() => {}, 5);
+  try {
+    const source = () => new Promise(() => {});
+    assert.equal(
+      await updateNoticeLine({ source, env: {}, timeoutMs: 10 }),
+      null,
+    );
+  } finally {
+    clearInterval(keepLoopAlive);
+  }
 });
 
 // emitUpdateNotice (the installEgoSdk wiring point) --------------------------
