@@ -10,10 +10,12 @@
  * command just asks directly and the answer is always current. (Don't re-add a
  * cache; it would only reintroduce staleness this version exists to avoid.)
  *
- * The version source is the one piece the client app still owes us:
- * `ego.getBrowserVersion()` (CITRO-2227) is not injected on any app build yet, so
- * the default source (`probeBrowserVersion`) degrades to "no update". When the real
- * method lands, nothing else here changes.
+ * The version check is `ego.getBrowserVersion()`, a real bridge method on current app
+ * builds; on older builds without it, the default source (`probeBrowserVersion`)
+ * degrades to "no update". The remedy is *not* a symmetric `ego.upgradeBrowser()`
+ * bridge call — the app exposes that half as the native CLI subcommand
+ * `ego-browser upgrade` instead, so the composed line tells the agent to run it as a
+ * shell command.
  *
  * The whole module is pure given an injected version source, so it is exercised
  * without a real browser.
@@ -27,7 +29,7 @@ export type BrowserVersionInfo = {
   mandatory?: boolean;
 };
 
-/** The injectable seam for the (not-yet-shipped) client version query. */
+/** The injectable seam for the client version query. */
 export type VersionSource = () => Promise<
   BrowserVersionInfo | null | undefined
 >;
@@ -68,13 +70,13 @@ export function composeNotice(
       ? `ego lite ${info.latestVersion}`
       : "an ego lite update";
   const urgency = info.mandatory ? "is required" : "is available";
-  return `${NOTICE_PREFIX} ${target} ${urgency} (current ${info.currentVersion}) — run: await upgradeBrowser(), then re-read the ego-browser skill`;
+  return `${NOTICE_PREFIX} ${target} ${urgency} (current ${info.currentVersion}) — run: ego-browser upgrade in your shell, then re-read the ego-browser skill`;
 }
 
 /**
  * Default version source. Calls the client method if this app build injected it,
- * otherwise returns null — old builds (and every build until CITRO-2227 ships) simply
- * report "no update" instead of erroring.
+ * otherwise returns null — older builds without the method simply report "no update"
+ * instead of erroring.
  */
 export async function probeBrowserVersion(): Promise<BrowserVersionInfo | null> {
   const ego = (globalThis as { ego?: { getBrowserVersion?: VersionSource } })
@@ -86,10 +88,8 @@ export async function probeBrowserVersion(): Promise<BrowserVersionInfo | null> 
 }
 
 /**
- * The one call the emit points make: ask the source, return the line to append, or
- * null. Awaits the source directly — both emit seams (the CLI `execute()` and the
- * SDK `beforeExit` hook) can await, so no cache is needed to bridge to a sync read.
- * Swallows every failure: an update check must never be what breaks a command.
+ * Ask the source, return the line to append, or null. Swallows every failure: an
+ * update check must never be what breaks a command.
  */
 export async function updateNoticeLine(
   options: { source?: VersionSource; env?: NodeJS.ProcessEnv } = {},
@@ -102,4 +102,30 @@ export async function updateNoticeLine(
   } catch {
     return null;
   }
+}
+
+/** A stream that can receive the notice line. */
+export type NoticeWritable = { write(chunk: string): unknown };
+
+/**
+ * The one real emit point: given the app's injected `ego` bridge (or none, on older
+ * builds), fire the check and write the resulting line straight to `stream` if there
+ * is one. Fire-and-forget — `installEgoSdk()` calls this without awaiting it, so the
+ * check runs concurrently with the rest of the heredoc rather than delaying it.
+ *
+ * Writes directly to `stream` rather than through the output-sink buffer: an update
+ * hint is unrelated to whether the command's own business logic hard-stopped, so it
+ * must not be swallowed by (or dilute) that unrelated discard-on-hard-stop path.
+ */
+export function emitUpdateNotice(
+  ego: { getBrowserVersion?: VersionSource } | null | undefined,
+  stream: NoticeWritable,
+  env?: NodeJS.ProcessEnv,
+): void {
+  updateNoticeLine({
+    source: () => ego?.getBrowserVersion?.() ?? Promise.resolve(null),
+    env,
+  }).then((line) => {
+    if (line) stream.write(`${line}\n`);
+  });
 }

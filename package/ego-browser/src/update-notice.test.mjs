@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   NOTICE_PREFIX,
   composeNotice,
+  emitUpdateNotice,
   noticeSuppressed,
   probeBrowserVersion,
   updateNoticeLine,
@@ -29,7 +30,7 @@ test("composeNotice renders an available update with prefix, versions, and hint"
   assert.ok(line.startsWith(NOTICE_PREFIX));
   assert.match(line, /ego lite 0\.4\.4\.0 is available/);
   assert.match(line, /current 0\.4\.3\.0/);
-  assert.match(line, /await upgradeBrowser\(\)/);
+  assert.match(line, /run: ego-browser upgrade in your shell/);
   assert.match(line, /re-read the ego-browser skill/);
 });
 
@@ -148,4 +149,79 @@ test("updateNoticeLine swallows a throwing source", async () => {
     throw new Error("bridge unavailable");
   };
   assert.equal(await updateNoticeLine({ source, env: {} }), null);
+});
+
+// emitUpdateNotice (the installEgoSdk wiring point) --------------------------
+
+function fakeStream() {
+  const chunks = [];
+  return {
+    write(chunk) {
+      chunks.push(String(chunk));
+    },
+    text() {
+      return chunks.join("");
+    },
+  };
+}
+
+// emitUpdateNotice is fire-and-forget: flush pending microtasks before asserting.
+function flushMicrotasks() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+test("emitUpdateNotice writes the notice line when the bridge reports an update", async () => {
+  const ego = {
+    getBrowserVersion: async () => ({
+      currentVersion: "0.4.3.0",
+      updateAvailable: true,
+      latestVersion: "0.4.4.0",
+    }),
+  };
+  const stream = fakeStream();
+  emitUpdateNotice(ego, stream, {});
+  await flushMicrotasks();
+  assert.ok(stream.text().startsWith(NOTICE_PREFIX));
+  assert.match(stream.text(), /run: ego-browser upgrade in your shell/);
+});
+
+test("emitUpdateNotice stays silent when there is no update", async () => {
+  const ego = {
+    getBrowserVersion: async () => ({
+      currentVersion: "0.4.3.0",
+      updateAvailable: false,
+    }),
+  };
+  const stream = fakeStream();
+  emitUpdateNotice(ego, stream, {});
+  await flushMicrotasks();
+  assert.equal(stream.text(), "");
+});
+
+test("emitUpdateNotice stays silent when the bridge method is missing (older build)", async () => {
+  const stream = fakeStream();
+  emitUpdateNotice({}, stream, {});
+  await flushMicrotasks();
+  assert.equal(stream.text(), "");
+});
+
+test("emitUpdateNotice stays silent when there is no ego bridge at all", async () => {
+  const stream = fakeStream();
+  emitUpdateNotice(null, stream, {});
+  await flushMicrotasks();
+  assert.equal(stream.text(), "");
+});
+
+test("emitUpdateNotice is suppressed in CI even when an update is available", async () => {
+  const ego = {
+    getBrowserVersion: async () => ({
+      currentVersion: "0.4.3.0",
+      updateAvailable: true,
+      latestVersion: "0.4.4.0",
+    }),
+  };
+  const stream = fakeStream();
+  emitUpdateNotice(ego, stream, { CI: "true" });
+  await flushMicrotasks();
+  assert.equal(stream.text(), "");
 });

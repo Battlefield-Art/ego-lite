@@ -14,6 +14,7 @@ import {
   resetSink,
 } from "./output-sink.js";
 import { runMain } from "./run.js";
+import { emitUpdateNotice, type VersionSource } from "./update-notice.js";
 
 type HelperFunction = (...args: unknown[]) => unknown;
 type EgoRuntime = Record<string, unknown> & {
@@ -87,6 +88,13 @@ export function installEgoSdk(
     installLifecycleFlush(process.stdout);
   }
   if (target.ego && typeof target.ego === "object") {
+    // Fire-and-forget: emitUpdateNotice never throws, and writing straight to stdout
+    // keeps it out of the output-sink buffer entirely, so it's unaffected by hard-stop
+    // discard and needs no beforeExit re-fire guard.
+    emitUpdateNotice(
+      target.ego as { getBrowserVersion?: VersionSource },
+      process.stdout,
+    );
     target.ego.helpers = installed;
     target.ego.learnings = {};
     if (!(target.ego as Record<symbol, unknown>)[EGO_WRAPPED]) {
