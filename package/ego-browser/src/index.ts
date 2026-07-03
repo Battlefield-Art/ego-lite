@@ -12,6 +12,7 @@ import {
   bufferOutput,
   installLifecycleFlush,
   resetSink,
+  setNoticeTrailer,
 } from "./output-sink.js";
 import { runMain } from "./run.js";
 import { emitUpdateNotice, type VersionSource } from "./update-notice.js";
@@ -88,12 +89,13 @@ export function installEgoSdk(
     installLifecycleFlush(process.stdout);
   }
   if (target.ego && typeof target.ego === "object") {
-    // Fire-and-forget: emitUpdateNotice never throws, and writing straight to stdout
-    // keeps it out of the output-sink buffer entirely, so it's unaffected by hard-stop
-    // discard and needs no beforeExit re-fire guard.
+    // Fire-and-forget update hint. Route the resolved line to the same channel the
+    // command's own output uses: the buffered-sink path registers it as a trailer the
+    // sink appends after that output (so it reads as a footer, not a prefix), while a
+    // host-provided cliLog gets the line directly. Never touches process.stdout blindly.
     emitUpdateNotice(
       target.ego as { getBrowserVersion?: VersionSource },
-      process.stdout,
+      usingDefaultLog ? setNoticeTrailer : (line) => options.cliLog?.(line),
     );
     target.ego.helpers = installed;
     target.ego.learnings = {};

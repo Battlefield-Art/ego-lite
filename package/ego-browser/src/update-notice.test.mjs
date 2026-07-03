@@ -6,7 +6,6 @@ import {
   composeNotice,
   emitUpdateNotice,
   noticeSuppressed,
-  probeBrowserVersion,
   updateNoticeLine,
 } from "../dist/src/update-notice.js";
 
@@ -60,6 +59,53 @@ test("composeNotice falls back to a generic phrase without a usable latest versi
   );
 });
 
+test("composeNotice treats blank version strings as absent", () => {
+  // The updater can report updateAvailable before the version strings resolve, so ""
+  // is a realistic bridge value: a blank currentVersion is not usable -> null.
+  assert.equal(
+    composeNotice({
+      currentVersion: "",
+      updateAvailable: true,
+      latestVersion: "0.4.4.0",
+    }),
+    null,
+  );
+  assert.equal(
+    composeNotice({ currentVersion: "   ", updateAvailable: true }),
+    null,
+  );
+  // A blank latestVersion degrades to the generic phrase, never "ego lite  is available".
+  const line = composeNotice({
+    currentVersion: "0.4.3.0",
+    updateAvailable: true,
+    latestVersion: "",
+  });
+  assert.match(line, /an ego lite update is available/);
+  assert.doesNotMatch(line, / {2}/); // no stray double space from a blank version
+});
+
+test("composeNotice requires a boolean-true updateAvailable / mandatory", () => {
+  // A truthy non-boolean (e.g. a stringified "false" or a numeric flag) must not count
+  // as an update — only the literal boolean true does.
+  assert.equal(
+    composeNotice({ currentVersion: "0.4.3.0", updateAvailable: "false" }),
+    null,
+  );
+  assert.equal(
+    composeNotice({ currentVersion: "0.4.3.0", updateAvailable: 1 }),
+    null,
+  );
+  // Likewise a truthy non-boolean mandatory must not flip the wording to "is required".
+  const line = composeNotice({
+    currentVersion: "0.4.3.0",
+    updateAvailable: true,
+    latestVersion: "0.4.4.0",
+    mandatory: "no",
+  });
+  assert.match(line, /is available/);
+  assert.doesNotMatch(line, /is required/);
+});
+
 test("composeNotice rejects input without a usable current version", () => {
   assert.equal(composeNotice({ updateAvailable: true }), null);
 });
@@ -75,33 +121,7 @@ test("noticeSuppressed honors the opt-out var and CI", () => {
   assert.equal(noticeSuppressed({ CI: "true" }), true);
 });
 
-// probeBrowserVersion (the mock seam) ---------------------------------------
-
-test("probeBrowserVersion returns null until the client injects the method", async () => {
-  const had = Object.prototype.hasOwnProperty.call(globalThis, "ego");
-  const prev = globalThis.ego;
-  try {
-    delete globalThis.ego;
-    assert.equal(await probeBrowserVersion(), null);
-    globalThis.ego = {}; // present but without getBrowserVersion (old build)
-    assert.equal(await probeBrowserVersion(), null);
-    globalThis.ego = {
-      getBrowserVersion: async () => ({
-        currentVersion: "0.4.3.0",
-        updateAvailable: false,
-      }),
-    };
-    assert.deepEqual(await probeBrowserVersion(), {
-      currentVersion: "0.4.3.0",
-      updateAvailable: false,
-    });
-  } finally {
-    if (had) globalThis.ego = prev;
-    else delete globalThis.ego;
-  }
-});
-
-// updateNoticeLine (the composed entry the emit points call) ----------------
+// updateNoticeLine (the composed entry the emit point calls) ----------------
 
 test("updateNoticeLine surfaces a line when the source reports an update", async () => {
   const source = async () => ({
@@ -151,18 +171,20 @@ test("updateNoticeLine swallows a throwing source", async () => {
   assert.equal(await updateNoticeLine({ source, env: {} }), null);
 });
 
+test("updateNoticeLine gives up (null) when the source never resolves", async () => {
+  // A stuck bridge must not leave the check pending forever; the timeout bounds it.
+  const source = () => new Promise(() => {});
+  assert.equal(
+    await updateNoticeLine({ source, env: {}, timeoutMs: 10 }),
+    null,
+  );
+});
+
 // emitUpdateNotice (the installEgoSdk wiring point) --------------------------
 
-function fakeStream() {
-  const chunks = [];
-  return {
-    write(chunk) {
-      chunks.push(String(chunk));
-    },
-    text() {
-      return chunks.join("");
-    },
-  };
+function collect() {
+  const lines = [];
+  return { lines, emit: (line) => lines.push(line) };
 }
 
 // emitUpdateNotice is fire-and-forget: flush pending microtasks before asserting.
@@ -170,7 +192,7 @@ function flushMicrotasks() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-test("emitUpdateNotice writes the notice line when the bridge reports an update", async () => {
+test("emitUpdateNotice hands one line to emit when the bridge reports an update", async () => {
   const ego = {
     getBrowserVersion: async () => ({
       currentVersion: "0.4.3.0",
@@ -178,11 +200,12 @@ test("emitUpdateNotice writes the notice line when the bridge reports an update"
       latestVersion: "0.4.4.0",
     }),
   };
-  const stream = fakeStream();
-  emitUpdateNotice(ego, stream, {});
+  const { lines, emit } = collect();
+  emitUpdateNotice(ego, emit, {});
   await flushMicrotasks();
-  assert.ok(stream.text().startsWith(NOTICE_PREFIX));
-  assert.match(stream.text(), /run: ego-browser upgrade in your shell/);
+  assert.equal(lines.length, 1);
+  assert.ok(lines[0].startsWith(NOTICE_PREFIX));
+  assert.match(lines[0], /run: ego-browser upgrade in your shell/);
 });
 
 test("emitUpdateNotice stays silent when there is no update", async () => {
@@ -192,24 +215,24 @@ test("emitUpdateNotice stays silent when there is no update", async () => {
       updateAvailable: false,
     }),
   };
-  const stream = fakeStream();
-  emitUpdateNotice(ego, stream, {});
+  const { lines, emit } = collect();
+  emitUpdateNotice(ego, emit, {});
   await flushMicrotasks();
-  assert.equal(stream.text(), "");
+  assert.equal(lines.length, 0);
 });
 
 test("emitUpdateNotice stays silent when the bridge method is missing (older build)", async () => {
-  const stream = fakeStream();
-  emitUpdateNotice({}, stream, {});
+  const { lines, emit } = collect();
+  emitUpdateNotice({}, emit, {});
   await flushMicrotasks();
-  assert.equal(stream.text(), "");
+  assert.equal(lines.length, 0);
 });
 
 test("emitUpdateNotice stays silent when there is no ego bridge at all", async () => {
-  const stream = fakeStream();
-  emitUpdateNotice(null, stream, {});
+  const { lines, emit } = collect();
+  emitUpdateNotice(null, emit, {});
   await flushMicrotasks();
-  assert.equal(stream.text(), "");
+  assert.equal(lines.length, 0);
 });
 
 test("emitUpdateNotice is suppressed in CI even when an update is available", async () => {
@@ -220,8 +243,28 @@ test("emitUpdateNotice is suppressed in CI even when an update is available", as
       latestVersion: "0.4.4.0",
     }),
   };
-  const stream = fakeStream();
-  emitUpdateNotice(ego, stream, { CI: "true" });
+  const { lines, emit } = collect();
+  emitUpdateNotice(ego, emit, { CI: "true" });
   await flushMicrotasks();
-  assert.equal(stream.text(), "");
+  assert.equal(lines.length, 0);
+});
+
+test("emitUpdateNotice swallows a throwing emit rather than rejecting", async () => {
+  const ego = {
+    getBrowserVersion: async () => ({
+      currentVersion: "0.4.3.0",
+      updateAvailable: true,
+      latestVersion: "0.4.4.0",
+    }),
+  };
+  // A throwing emit must not surface as an unhandled rejection (which would fail the run).
+  emitUpdateNotice(
+    ego,
+    () => {
+      throw new Error("write failed");
+    },
+    {},
+  );
+  await flushMicrotasks();
+  assert.ok(true);
 });
