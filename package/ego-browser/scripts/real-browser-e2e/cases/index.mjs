@@ -3,11 +3,25 @@ import { helperSurfaceCase } from "./helper-surface.mjs";
 import { taskSpaceCase } from "./task-space.mjs";
 import { navigationCase } from "./navigation.mjs";
 import { observationCase } from "./observation.mjs";
-import { pointerCase } from "./pointer.mjs";
+import {
+  pointerClickCase,
+  pointerHoverDragCase,
+  pointerInteractionRegressionCase,
+  pointerValidationCase,
+  scrollHelpersCase,
+} from "./pointer.mjs";
 import { keyboardCase } from "./keyboard.mjs";
 import { keyboardRegressionCase } from "./keyboard-regression.mjs";
-import { runtimeCase } from "./runtime.mjs";
+import {
+  cdpJsHelpCase,
+  fetchHelpersCase,
+  waitHelpersCase,
+} from "./runtime.mjs";
 import { runtimeRegressionCase } from "./runtime-regression.mjs";
+import { adversarialCases } from "./adversarial.mjs";
+import { workflowCases } from "./workflows.mjs";
+import { interactionsCases } from "./interactions.mjs";
+import { canvasCases } from "./canvas.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -15,9 +29,22 @@ export const e2eCases = [
   { name: "task spaces and control", body: taskSpaceCase },
   { name: "navigation helpers", body: navigationCase },
   { name: "observation helpers", body: observationCase },
-  { name: "pointer and scroll helpers", body: pointerCase },
+  { name: "pointer click helpers", body: pointerClickCase },
+  { name: "pointer hover drag helpers", body: pointerHoverDragCase },
+  { name: "scroll helpers", body: scrollHelpersCase },
+  { name: "pointer validation", body: pointerValidationCase },
+  {
+    name: "pointer interaction regression",
+    body: pointerInteractionRegressionCase,
+  },
   { name: "keyboard and file helpers", body: keyboardCase },
   { name: "keyboard regression", body: keyboardRegressionCase },
-  { name: "wait, fetch, cdp, js, help", body: runtimeCase },
+  { name: "wait helpers", body: waitHelpersCase },
+  { name: "fetch helpers", body: fetchHelpersCase },
+  { name: "cdp js help", body: cdpJsHelpCase },
   { name: "runtime regression", body: runtimeRegressionCase },
+  ...adversarialCases,
+  ...workflowCases,
+  ...interactionsCases,
+  ...canvasCases,
 ];

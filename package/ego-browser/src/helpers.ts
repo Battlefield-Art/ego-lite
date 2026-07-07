@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { setOverrides, state } from "./state.js";
 import { assertNoEgoError, isEgoUserControlError } from "./ego-errors.js";
 import { help as helpRuntime, formatHelp } from "./help-runtime.js";
-import { cdp, decodeUnserializableJsValue, js } from "./cdp-eval.js";
+import { cdp, decodeUnserializableJsValue, evaluate } from "./cdp-eval.js";
 import * as pointer from "./driver/pointer.js";
 import * as keyboard from "./driver/keyboard.js";
 import * as nav from "./driver/nav.js";
@@ -22,22 +22,16 @@ import {
 } from "./learning/index.js";
 
 export { NAME } from "./state.js";
-export { cdp, js } from "./cdp-eval.js";
+export { cdp, evaluate } from "./cdp-eval.js";
 export {
   click,
-  doubleClick,
+  dblclick,
   hover,
-  dragMouse,
-  scroll,
-  scrollBy,
-  scrollToBottomUntil,
+  drag,
+  wheel,
+  scrollIntoViewIfNeeded,
 } from "./driver/pointer.js";
-export {
-  pressKey,
-  typeText,
-  fillInput,
-  dispatchKey,
-} from "./driver/keyboard.js";
+export { press, insertText, fill, dispatchEvent } from "./driver/keyboard.js";
 export {
   INTERNAL_URL_PREFIXES,
   pageInfo,
@@ -46,26 +40,23 @@ export {
   switchTab,
   openOrReuseTab,
   closeTab,
-  gotoUrl,
-  gotoAndWait,
+  goto,
   ensureRealTab,
   iframeTarget,
 } from "./driver/nav.js";
 export {
   snapshot,
   snapshotRaw,
-  snapshotText,
-  captureScreenshot,
+  screenshot,
   elementCenter,
   drainEvents,
 } from "./driver/observe.js";
 export {
-  wait,
-  waitForLoad,
-  waitForElement,
-  waitForNetworkIdle,
+  waitForTimeout,
+  waitForLoadState,
+  waitForSelector,
 } from "./driver/waits.js";
-export { uploadFile } from "./driver/files.js";
+export { setInputFiles } from "./driver/files.js";
 export { browserFetch, serverFetch } from "./http.js";
 
 /**
@@ -372,7 +363,7 @@ export async function waitForAgentControl(
     if (Date.now() >= deadline) {
       throw new Error(`waitForAgentControl timed out after ${timeout}s`);
     }
-    await waits.wait(interval);
+    await waits.waitForTimeout(interval * 1000);
   }
 }
 
@@ -469,7 +460,7 @@ export async function runSiteBrowserTool(siteId, toolName, args: any = {}) {
   const source = await loadBrowserToolSource(siteId, toolName, {
     agentWorkspace: state.agentWorkspace(),
   });
-  return js(wrapBrowserTool(source, args));
+  return evaluate(wrapBrowserTool(source, args));
 }
 
 /**
@@ -495,7 +486,7 @@ export function helperContext(extra: any = {}) {
     ...waits,
     ...files,
     cdp,
-    js,
+    evaluate,
     serverFetch,
     browserFetch,
     siteSkills,

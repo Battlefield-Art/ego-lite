@@ -2,7 +2,7 @@
 
 ## Scrolling timeline
 - Timeline is inside `[data-testid="primaryColumn"]`
-- Posts load lazily as you scroll — use `scrollToBottomUntil` to load more
+- Posts load lazily as you scroll — scroll down with `wheel(0, 1000)` repeatedly to load more
 - Virtual list: DOM only renders visible articles + buffer
 
 ## Extracting posts

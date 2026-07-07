@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { setOverrides } from "../../dist/src/state.js";
-import { pressKey } from "../../dist/src/driver/keyboard.js";
+import { press } from "../../dist/src/driver/keyboard.js";
 
-test("pressKey maps Command+A to the selectAll editing command", async () => {
+test("press maps Command+A to the selectAll editing command", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
@@ -13,7 +13,7 @@ test("pressKey maps Command+A to the selectAll editing command", async () => {
     },
   });
   try {
-    await pressKey("a", 4);
+    await press("Meta+a");
   } finally {
     restore();
   }
@@ -44,7 +44,7 @@ test("pressKey maps Command+A to the selectAll editing command", async () => {
   });
 });
 
-test("pressKey maps Control+A to the selectAll editing command", async () => {
+test("press maps Control+A to the selectAll editing command", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
@@ -53,7 +53,7 @@ test("pressKey maps Control+A to the selectAll editing command", async () => {
     },
   });
   try {
-    await pressKey("a", 2);
+    await press("Control+a");
   } finally {
     restore();
   }
@@ -61,7 +61,7 @@ test("pressKey maps Control+A to the selectAll editing command", async () => {
   assert.deepEqual(calls[0].params.commands, ["selectAll"]);
 });
 
-test("pressKey does not map modified Command+A variants to selectAll", async () => {
+test("press does not map modified Command+A variants to selectAll", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
@@ -70,7 +70,7 @@ test("pressKey does not map modified Command+A variants to selectAll", async () 
     },
   });
   try {
-    await pressKey("a", 12);
+    await press("Shift+Meta+a");
   } finally {
     restore();
   }
@@ -78,7 +78,7 @@ test("pressKey does not map modified Command+A variants to selectAll", async () 
   assert.equal(calls[0].params.commands, undefined);
 });
 
-test("pressKey leaves ordinary printable keys unchanged", async () => {
+test("press parses a literal plus key with modifiers (Shift++)", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
@@ -87,7 +87,42 @@ test("pressKey leaves ordinary printable keys unchanged", async () => {
     },
   });
   try {
-    await pressKey("x");
+    await press("Shift++");
+  } finally {
+    restore();
+  }
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].params, {
+    type: "keyDown",
+    key: "+",
+    code: "+",
+    modifiers: 8,
+    windowsVirtualKeyCode: 43,
+    nativeVirtualKeyCode: 43,
+    text: "+",
+    unmodifiedText: "+",
+  });
+  assert.deepEqual(calls[1].params, {
+    type: "keyUp",
+    key: "+",
+    code: "+",
+    modifiers: 8,
+    windowsVirtualKeyCode: 43,
+    nativeVirtualKeyCode: 43,
+  });
+});
+
+test("press leaves ordinary printable keys unchanged", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      return {};
+    },
+  });
+  try {
+    await press("x");
   } finally {
     restore();
   }
@@ -113,7 +148,7 @@ test("pressKey leaves ordinary printable keys unchanged", async () => {
   });
 });
 
-test("pressKey maps Backspace and Delete to editing commands", async () => {
+test("press maps Backspace and Delete to editing commands", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params, sessionId) {
@@ -122,8 +157,8 @@ test("pressKey maps Backspace and Delete to editing commands", async () => {
     },
   });
   try {
-    await pressKey("Backspace");
-    await pressKey("Delete");
+    await press("Backspace");
+    await press("Delete");
   } finally {
     restore();
   }
@@ -132,7 +167,7 @@ test("pressKey maps Backspace and Delete to editing commands", async () => {
   assert.deepEqual(calls[2].params.commands, ["deleteForward"]);
 });
 
-test("pressKey triggers probe fallback when CDP dispatch is not trusted", async () => {
+test("press triggers probe fallback when CDP dispatch is not trusted", async () => {
   // Enable canProbeInputFallback() by providing ego runtime
   const originalEgo = globalThis.ego;
   globalThis.ego = { sendCDPMessage: () => {} };
@@ -156,7 +191,7 @@ test("pressKey triggers probe fallback when CDP dispatch is not trusted", async 
     },
   });
   try {
-    await pressKey("a");
+    await press("a");
   } finally {
     restore();
     if (originalEgo === undefined) delete globalThis.ego;
@@ -188,7 +223,7 @@ test("pressKey triggers probe fallback when CDP dispatch is not trusted", async 
   );
 });
 
-test("pressKey skips probe fallback when CDP dispatch is trusted", async () => {
+test("press skips probe fallback when CDP dispatch is trusted", async () => {
   const originalEgo = globalThis.ego;
   globalThis.ego = { sendCDPMessage: () => {} };
   let evaluateCallCount = 0;
@@ -208,7 +243,7 @@ test("pressKey skips probe fallback when CDP dispatch is trusted", async () => {
     },
   });
   try {
-    await pressKey("x");
+    await press("x");
   } finally {
     restore();
     if (originalEgo === undefined) delete globalThis.ego;

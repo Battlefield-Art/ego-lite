@@ -116,8 +116,8 @@ npm run validate:site-skills    # alias: validate:learnings
 
 ```bash
 node artifacts/ego-browser/index.js <<'JS'
-await waitForLoad()
-cliLog(await pageInfo())
+await waitForLoadState()
+console.log(await pageInfo())
 JS
 ```
 

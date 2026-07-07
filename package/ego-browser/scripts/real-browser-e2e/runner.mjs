@@ -19,6 +19,9 @@ const runnerDir = dirname(fileURLToPath(import.meta.url));
 const packageDir = join(runnerDir, "..", "..");
 const egoBrowserSdkPath = join(packageDir, "dist", "out", "index.js");
 const egoBrowserArgs = ["nodejs", "--sdk-path", egoBrowserSdkPath];
+const verboseCaseOutput =
+  process.env.EGO_BROWSER_REAL_E2E_VERBOSE_CASE_OUTPUT === "1" ||
+  process.env.EGO_BROWSER_REAL_E2E_VERBOSE_CASE_OUTPUT === "true";
 
 export async function runRealBrowserE2e() {
   const keepTaskSpace =
@@ -30,6 +33,21 @@ export async function runRealBrowserE2e() {
       .map((name) => name.trim())
       .filter(Boolean),
   );
+  const availableCaseNames = [
+    "nodejs bridge smoke",
+    ...e2eCases.map((testCase) => testCase.name),
+  ];
+  const unknownOnlyCases = [...onlyCases].filter(
+    (name) => !availableCaseNames.includes(name),
+  );
+  if (unknownOnlyCases.length > 0) {
+    console.error(
+      `Unknown EGO_BROWSER_REAL_E2E_ONLY case(s): ${unknownOnlyCases.join(", ")}`,
+    );
+    console.error(`Available cases: ${availableCaseNames.join(", ")}`);
+    process.exitCode = 2;
+    return;
+  }
 
   let server;
   let tempDir;
@@ -41,34 +59,111 @@ export async function runRealBrowserE2e() {
     caseResults.push({ name, status, durationMs, assertionCount, message });
   }
 
-  async function runEgoCase(name, body, timeoutMs = 45000) {
+  async function runNodeBridgeSmoke(timeoutMs = 15000) {
+    const name = "nodejs bridge smoke";
     console.log(`-- ${name}`);
+    const startedAt = Date.now();
+    const marker = `EGO_NODEJS_BRIDGE_SMOKE_${Date.now()}`;
+    // The output channel is the overridden console.log. typeof console.log is always
+    // "function" (it is a Node built-in), so it cannot prove the SDK wired its sink.
+    // Two real signals cover it instead: the marker round-trip below proves console.log
+    // output reaches stdout, and helperCount > 0 proves installEgoSdk ran (it sets the
+    // console.log override and ego.helpers in the same call), so the override ran too.
+    const source = `
+      console.log(${JSON.stringify(marker)});
+      console.log(JSON.stringify({
+        egoType: typeof globalThis.ego,
+        hasSendCDPMessage: typeof globalThis.ego?.sendCDPMessage,
+        processVersion: process.version,
+        helperCount: Object.keys(globalThis.ego?.helpers || {}).length
+      }));
+    `;
+    try {
+      const { stdout, stderr } = await runCommand(
+        "ego-browser",
+        egoBrowserArgs,
+        {
+          cwd: packageDir,
+          egoBrowserSdkPath,
+          echo: verboseCaseOutput,
+          input: source,
+          timeoutMs,
+        },
+      );
+      const probe = parseNodeBridgeSmoke(`${stdout}\n${stderr}`, marker);
+      if (
+        probe.egoType !== "object" ||
+        probe.hasSendCDPMessage !== "function" ||
+        typeof probe.processVersion !== "string" ||
+        probe.helperCount <= 0
+      ) {
+        throw new Error(
+          `nodejs bridge smoke returned invalid runtime data: ${JSON.stringify(probe)}`,
+        );
+      }
+      const durationMs = Date.now() - startedAt;
+      recordResult(name, "pass", durationMs, 4);
+      console.log(
+        `-- ${name} passed (${formatDuration(durationMs)}, 4 assertions)`,
+      );
+    } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      const message = error?.message || String(error);
+      recordResult(name, "fail", durationMs, 0, message);
+      console.error(
+        `[FAIL] ${name} (${formatDuration(durationMs)}): ${message}`,
+      );
+    }
+  }
+
+  async function maybeRunNodeBridgeSmoke() {
+    await runNodeBridgeSmoke();
+  }
+
+  async function runEgoCase(name, body, timeoutMs = 45000, options = {}) {
+    const visible = options.visible !== false;
+    if (visible) console.log(`-- ${name}`);
     const source = egoSource(body, {
       ...context,
       keepTaskSpace: keepTaskSpace && passed,
     });
     const startedAt = Date.now();
+    await rm(caseResultPath(tempDir), { force: true });
     try {
       const { stdout } = await runCommand("ego-browser", egoBrowserArgs, {
         cwd: packageDir,
         egoBrowserSdkPath,
+        echo: verboseCaseOutput,
         input: source,
         timeoutMs,
       });
       const durationMs = Date.now() - startedAt;
-      const assertions = await readCaseAssertionCount(tempDir, stdout);
+      const caseResult = await readCaseResult(tempDir, stdout);
+      if (!caseResult.ok) {
+        const error = new Error(caseResult.error);
+        error.stdout = stdout;
+        throw error;
+      }
+      const assertions = caseResult.assertions;
       recordResult(name, "pass", durationMs, assertions);
-      console.log(
-        `-- ${name} passed (${formatDuration(durationMs)}, ${assertions} assertions)`,
-      );
+      if (visible) {
+        console.log(
+          `-- ${name} passed (${formatDuration(durationMs)}, ${assertions} assertions)`,
+        );
+      }
     } catch (error) {
       const durationMs = Date.now() - startedAt;
-      const message = error?.message || String(error);
-      const assertions = await readCaseAssertionCount(tempDir, error?.stdout);
+      const caseResult = await readCaseResult(tempDir, error?.stdout);
+      const message = caseResult.error || error?.message || String(error);
+      const assertions = caseResult.assertions;
       recordResult(name, "fail", durationMs, assertions, message);
-      console.error(
-        `[FAIL] ${name} (${formatDuration(durationMs)}): ${message}`,
-      );
+      if (visible) {
+        console.error(
+          `[FAIL] ${name} (${formatDuration(durationMs)}): ${message}`,
+        );
+      } else {
+        console.error(`[${name}] ${message}`);
+      }
     }
   }
 
@@ -88,7 +183,7 @@ export async function runRealBrowserE2e() {
       `
         try {
           const result = await completeTaskSpace(taskName, { keep: keepTaskSpace });
-          cliLog(JSON.stringify({ cleanup: result }));
+          console.log(JSON.stringify({ cleanup: result }));
         } catch (error) {
           if (!String(error?.message || error).includes("task space not found")) {
             throw error;
@@ -96,6 +191,7 @@ export async function runRealBrowserE2e() {
         }
       `,
       20000,
+      { visible: false },
     );
     // Remove cleanup result and any failures it produced
     const cleanupResults = caseResults.filter((r) => r.name === "cleanup");
@@ -147,6 +243,18 @@ export async function runRealBrowserE2e() {
     console.log(`task: ${taskName}`);
     console.log(`sdk: ${egoBrowserSdkPath}`);
 
+    await maybeRunNodeBridgeSmoke();
+    if (
+      caseResults.some(
+        (r) => r.name === "nodejs bridge smoke" && r.status === "fail",
+      )
+    ) {
+      context.skipCleanup = true;
+      printSummary(caseResults, Date.now() - totalStartedAt);
+      process.exitCode = 1;
+      return;
+    }
+
     for (const testCase of e2eCases) {
       await maybeRunEgoCase(testCase.name, testCase.body());
     }
@@ -161,7 +269,7 @@ export async function runRealBrowserE2e() {
     console.error(error?.stack || error?.message || String(error));
     process.exitCode = error?.code === "ENOENT" ? 127 : 1;
   } finally {
-    if (context.taskName) {
+    if (context.taskName && !context.skipCleanup) {
       await cleanupTaskSpace().catch((error) => {
         console.error(`[cleanup] ${error?.message || error}`);
       });
@@ -217,21 +325,60 @@ async function initializeE2eEnvironment(context, tempDir) {
   );
 }
 
+function parseNodeBridgeSmoke(stdout, marker) {
+  const lines = String(stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const markerIndex = lines.indexOf(marker);
+  if (markerIndex === -1) {
+    throw new Error(
+      "nodejs bridge did not print the console.log smoke marker; ego-browser nodejs may have exited without executing stdin",
+    );
+  }
+  const payload = lines[markerIndex + 1];
+  if (!payload) {
+    throw new Error("nodejs bridge smoke did not print runtime probe data");
+  }
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    throw new Error(
+      `nodejs bridge smoke printed invalid runtime probe data: ${payload}`,
+    );
+  }
+}
+
+function caseResultPath(tempDir) {
+  return join(tempDir, "case-result.json");
+}
+
 async function readCaseAssertionCount(tempDir, stdout) {
-  const resultPath = join(tempDir, "case-result.json");
+  return (await readCaseResult(tempDir, stdout)).assertions;
+}
+
+async function readCaseResult(tempDir, stdout) {
+  const resultPath = caseResultPath(tempDir);
   try {
     const raw = await readFile(resultPath, "utf8");
     const parsed = JSON.parse(raw);
-    if (typeof parsed.assertions === "number") return parsed.assertions;
-  } catch {
-    // file not written or not valid JSON — fall back to stdout
+    return {
+      ok: parsed.ok === true,
+      assertions: typeof parsed.assertions === "number" ? parsed.assertions : 0,
+      error: parsed.error || "case-result.json reported failure",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      assertions: extractAssertionCount(stdout),
+      error: `case-result.json was not written or readable; ego-browser nodejs may have exited without executing stdin (${error?.message || error})`,
+    };
   }
-  return extractAssertionCount(stdout);
 }
 
 function extractAssertionCount(stdout) {
   if (!stdout) return 0;
-  // Find the last JSON line with "assertions" from cliLog output
+  // Find the last JSON line with "assertions" from console.log output
   const lines = stdout.split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
@@ -257,12 +404,13 @@ function printSummary(results, totalMs) {
   const passed = results.filter((r) => r.status === "pass").length;
   const failed = results.filter((r) => r.status === "fail").length;
   const skipped = results.filter((r) => r.status === "skip").length;
+  const executed = passed + failed;
   const totalAssertions = results.reduce((sum, r) => sum + r.assertionCount, 0);
 
   console.log("");
   console.log("== E2E Summary ==");
   console.log(
-    `  Passed:   ${passed}/${total}${total > 0 ? `  (${Math.round((passed / total) * 100)}%)` : ""}`,
+    `  Passed:   ${passed}/${executed}${executed > 0 ? `  (${Math.round((passed / executed) * 100)}%)` : ""}`,
   );
   if (failed > 0) console.log(`  Failed:   ${failed}/${total}`);
   if (skipped > 0) console.log(`  Skipped:  ${skipped}/${total}`);

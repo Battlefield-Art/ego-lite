@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { state } from "../state.js";
-import { cdp, js } from "../cdp-eval.js";
+import { cdp, evaluate } from "../cdp-eval.js";
 import { pageInfo } from "./nav.js";
 import {
   browserEgo,
@@ -34,8 +34,9 @@ type ScreenshotClip = {
   scale?: number;
 };
 
-type CaptureScreenshotOptions = {
-  full?: boolean;
+type ScreenshotOptions = {
+  path?: string;
+  fullPage?: boolean;
   raw?: boolean;
   clip?: ScreenshotClip;
 };
@@ -44,7 +45,7 @@ export async function drainEvents() {
   return drainBrowserEvents();
 }
 
-export async function snapshot(options: SnapshotOptions = {}) {
+export async function snapshotRaw(options: SnapshotOptions = {}) {
   let result;
   try {
     result = await browserEgo().snapshot(options);
@@ -60,17 +61,16 @@ export async function snapshot(options: SnapshotOptions = {}) {
   return result;
 }
 
-registerSnapshotForRefRefresh(() => snapshot());
-
-export const snapshotRaw = snapshot;
+registerSnapshotForRefRefresh(() => snapshotRaw());
 
 /**
- * Return snapshot content with agent-friendly defaults.
+ * Return snapshot content with agent-friendly defaults. The text surface most
+ * agents want; use snapshotRaw when you need the structured { content, refs }.
  * @param {{scope?: "only_within_viewport"|"full_page", includeActionMarks?: boolean, includeStableLocator?: boolean}} [options]
  * @returns {Promise<string>}
  */
-export async function snapshotText(options: SnapshotOptions = {}) {
-  const result = await snapshot({
+export async function snapshot(options: SnapshotOptions = {}) {
+  const result = await snapshotRaw({
     scope: options.scope ?? "full_page",
     includeActionMarks: options.includeActionMarks ?? true,
     includeStableLocator: options.includeStableLocator ?? true,
@@ -93,14 +93,11 @@ export async function elementCenter(selectorOrRef) {
 // other's shots in the shared tmpdir, and successive shots in one run distinct.
 let screenshotSeq = 0;
 
-export async function captureScreenshot(
-  path = join(
-    tmpdir(),
-    `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`,
-  ),
-  options: CaptureScreenshotOptions = {},
-) {
-  const full = options.full ?? false;
+export async function screenshot(options: ScreenshotOptions = {}) {
+  const path =
+    options.path ??
+    join(tmpdir(), `ego-browser-shot-${process.pid}-${++screenshotSeq}.png`);
+  const full = options.fullPage ?? false;
   const raw = options.raw ?? false;
   const params: any = {
     format: "png",
@@ -115,14 +112,14 @@ export async function captureScreenshot(
       await ensureSession();
     }
     if (!pendingDialog()) {
-      const dpr = Number(await js("window.devicePixelRatio")) || 1;
+      const dpr = Number(await evaluate("window.devicePixelRatio")) || 1;
       const cssScale = 1 / dpr;
       if (options.clip) {
         params.clip = { scale: cssScale, ...options.clip };
       } else {
         const info = await pageInfo();
         if ("dialog" in info) {
-          return captureScreenshot(path, { ...options, raw: true });
+          return screenshot({ ...options, path, raw: true });
         }
         params.clip = {
           x: 0,

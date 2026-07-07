@@ -79,11 +79,28 @@ export function taskSpaceCase() {
       "handOffTaskSpace reports missing task space"
     );
 
+    // handOff → takeOver cycle: verify ownership transitions via listTaskSpaces
     await handOffTaskSpace();
+    const afterHandoff = await listTaskSpaces();
+    const handedOff = afterHandoff.find((s) => s.name === taskName);
+    assert(handedOff.ownership !== "agent", "handOffTaskSpace transfers ownership away from agent");
+
     await takeOverTaskSpace();
+    const afterTakeover = await listTaskSpaces();
+    const taken = afterTakeover.find((s) => s.name === taskName);
+    assertEqual(taken.ownership, "agent", "takeOverTaskSpace restores agent ownership");
+
     await waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
+
+    // Repeat with explicit name parameter
     await handOffTaskSpace(taskName);
+    const afterHandoff2 = await listTaskSpaces();
+    assert(afterHandoff2.find((s) => s.name === taskName).ownership !== "agent", "handOffTaskSpace(name) transfers ownership away from agent");
+
     await takeOverTaskSpace(taskName);
+    const afterTakeover2 = await listTaskSpaces();
+    assertEqual(afterTakeover2.find((s) => s.name === taskName).ownership, "agent", "takeOverTaskSpace(name) restores agent ownership");
+
     await waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
   `;
 }

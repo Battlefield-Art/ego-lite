@@ -1,17 +1,19 @@
 /**
  * Output sink for the agent-facing heredoc runtime.
  *
- * `cliLog` is the only channel an agent reads. A single user takeover turns that
- * channel into noise: while the user holds control, every browser command re-reports
- * the same hard-stop error, so a script that loops over work and swallows each error
- * (try/catch, `.catch()`) prints the same guidance on every iteration, buried under
- * its own business logging and success rows.
+ * `console.log` is the only channel an agent reads (the runtime routes it here). A
+ * single user takeover turns that channel into noise: while the user holds control,
+ * every browser command re-reports the same hard-stop error, so a script that loops
+ * over work and swallows each error (try/catch, `.catch()`) prints the same guidance
+ * on every iteration, buried under its own business logging and success rows.
  *
- * To collapse that to one clean line we buffer cliLog output instead of writing it
+ * To collapse that to one clean line we buffer console.log output instead of writing it
  * straight through. When a hard-stop error is born (see `buildEgoError`) we record its
  * owned message once. At the end of the run we either:
  *   - a hard stop occurred -> discard the whole buffer and emit the owned message once
  *   - otherwise            -> flush the buffered output verbatim
+ * and in both cases append the update-notice trailer (if any) last, so an out-of-band
+ * "ego lite update available" hint reads as a footer after the command's own output.
  *
  * Buffering is the price of discarding pre-stop output: bytes already written cannot be
  * recalled, so nothing may be written until we know the run did not hard-stop. Each
@@ -23,12 +25,22 @@ type WritableLike = { write(chunk: string): unknown };
 
 let buffer: string[] = [];
 let hardStopMessage: string | null = null;
+let noticeTrailer: string | null = null;
 let flushed = false;
 let lifecycleHooked = false;
 
-/** Buffer one already-formatted cliLog chunk (the trailing newline is included). */
+/** Buffer one already-formatted console.log chunk (the trailing newline is included). */
 export function bufferOutput(chunk: string): void {
   buffer.push(chunk);
+}
+
+/**
+ * Record the update-notice line to append after this run's output. Set out-of-band by
+ * the fire-and-forget version check; appended by `flushSink` so it trails the command's
+ * own output rather than racing ahead of it. Last write wins.
+ */
+export function setNoticeTrailer(line: string): void {
+  noticeTrailer = line;
 }
 
 /**
@@ -67,6 +79,13 @@ export function flushSink(stream: WritableLike, thrown: boolean): void {
   } else {
     for (const chunk of buffer) stream.write(chunk);
   }
+  // The update hint is independent of the run's own output (and of a hard stop), so it
+  // is appended last in every case — after the business output or the owned guidance.
+  if (noticeTrailer !== null) {
+    stream.write(
+      noticeTrailer.endsWith("\n") ? noticeTrailer : `${noticeTrailer}\n`,
+    );
+  }
   buffer = [];
 }
 
@@ -74,6 +93,7 @@ export function flushSink(stream: WritableLike, thrown: boolean): void {
 export function resetSink(): void {
   buffer = [];
   hardStopMessage = null;
+  noticeTrailer = null;
   flushed = false;
 }
 

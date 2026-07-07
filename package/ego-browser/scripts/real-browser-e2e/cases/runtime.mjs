@@ -1,25 +1,32 @@
-export function runtimeCase() {
+export function waitHelpersCase() {
   return `
-    await switchTaskSpace(taskName);
+    await useOrCreateTaskSpace(taskName);
     await resetHome();
 
     const waitedAt = Date.now();
-    await wait(0.1);
-    assert(Date.now() - waitedAt >= 50, "wait pauses for a measurable duration");
+    await waitForTimeout(100);
+    assert(Date.now() - waitedAt >= 50, "waitForTimeout pauses for a measurable duration");
     assert(
-      await waitForElement("#delayed", { timeout: 3, visible: true }),
-      "waitForElement observes delayed visible element"
+      await waitForSelector("#delayed", { timeout: 3000, state: "visible" }),
+      "waitForSelector observes delayed visible element"
     );
     assertEqual(
-      await waitForElement("#does-not-exist", { timeout: 0.2 }),
+      await waitForSelector("#does-not-exist", { timeout: 200 }),
       false,
-      "waitForElement returns false for missing elements"
+      "waitForSelector returns false for missing elements"
     );
     assertEqual(
-      await waitForElement("#never-visible", { timeout: 0.4, visible: true }),
+      await waitForSelector("#never-visible", { timeout: 400, state: "visible" }),
       false,
-      "waitForElement visible:true rejects hidden elements"
+      "waitForSelector state:visible rejects hidden elements"
     );
+  `;
+}
+
+export function fetchHelpersCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
 
     const serverText = await serverFetch(baseUrl + "/api/text", { timeout: 5 });
     assertEqual(serverText, "server text fixture", "serverFetch reads fixture API");
@@ -83,9 +90,16 @@ export function runtimeCase() {
       "HTTP 500",
       "browserFetch reports HTTP errors"
     );
+  `;
+}
+
+export function cdpJsHelpCase() {
+  return `
+    await useOrCreateTaskSpace(taskName);
+    await resetHome();
 
     await cdp("Network.enable");
-    await js(
+    await evaluate(
       "window.__slowText = '';" +
         "fetch('/api/slow?ms=300&case=network-idle-' + Date.now())" +
         ".then((response) => response.text())" +
@@ -93,10 +107,10 @@ export function runtimeCase() {
         "return true;"
     );
     assert(
-      await waitForNetworkIdle({ timeout: 5, idleMs: 100 }),
-      "waitForNetworkIdle waits for an in-flight slow fetch"
+      await waitForLoadState("networkidle", { timeout: 5000, idleMs: 100 }),
+      "waitForLoadState networkidle waits for an in-flight slow fetch"
     );
-    assertEqual(await js("return window.__slowText"), "slow fixture", "waitForNetworkIdle leaves the slow fetch complete");
+    assertEqual(await evaluate("return window.__slowText"), "slow fixture", "waitForLoadState networkidle leaves the slow fetch complete");
 
     const evalResult = await cdp("Runtime.evaluate", {
       expression: "document.title",
@@ -110,27 +124,27 @@ export function runtimeCase() {
       "cdp reports unsupported methods"
     );
 
-    const title = await js("return document.title");
+    const title = await evaluate("return document.title");
     assertEqual(title, "ego-lite helper e2e", "js returns evaluated value");
 
-    const wrappedReturn = await js("const title = document.title; return title;");
+    const wrappedReturn = await evaluate("const title = document.title; return title;");
     assertEqual(wrappedReturn, "ego-lite helper e2e", "js wraps top-level return statements");
 
-    const arithmetic = await js("1 + 2");
+    const arithmetic = await evaluate("1 + 2");
     assertEqual(arithmetic, 3, "js evaluates expression values");
 
-    const titleFromFunction = await js(() => document.title);
+    const titleFromFunction = await evaluate(() => document.title);
     assertEqual(titleFromFunction, "ego-lite helper e2e", "js supports function input");
 
     await assertRejects(
-      () => js("throw new Error('js boom')"),
+      () => evaluate("throw new Error('js boom')"),
       "js boom",
       "js reports page exceptions"
     );
 
-    const helpText = help("click", "fillInput");
+    const helpText = help("click", "fill");
     assertIncludes(helpText, "click", "help returns helper documentation");
-    assertIncludes(helpText, "fillInput", "help returns multiple helper docs");
+    assertIncludes(helpText, "fill", "help returns multiple helper docs");
 
     const unknownHelp = help("missingHelperForE2E");
     assertIncludes(unknownHelp, "Unknown helper", "help reports unknown helpers");

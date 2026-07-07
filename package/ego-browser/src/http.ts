@@ -1,4 +1,4 @@
-import { js } from "./cdp-eval.js";
+import { evaluate } from "./cdp-eval.js";
 
 /**
  * Fetch text from Node with a browser-like User-Agent.
@@ -11,10 +11,12 @@ export async function serverFetch(url, options: any = {}) {
   const response = await fetch(url, {
     ...fetchOptions,
     headers: { "User-Agent": "Mozilla/5.0", ...headers },
-    signal: AbortSignal.timeout(timeout * 1000)
+    signal: AbortSignal.timeout(timeout * 1000),
   });
   if (!response.ok) {
-    throw new Error(`${fetchOptions.method || "GET"} ${url} failed: HTTP ${response.status}`);
+    throw new Error(
+      `${fetchOptions.method || "GET"} ${url} failed: HTTP ${response.status}`,
+    );
   }
   return response.text();
 }
@@ -28,7 +30,7 @@ export async function serverFetch(url, options: any = {}) {
 export async function browserFetch(url, options: any = {}) {
   const { timeout = 20.0, ...fetchOptions } = options;
   const payload = JSON.stringify({ url, options: fetchOptions, timeout });
-  return js(`(async () => {
+  return evaluate(`(async () => {
     const { url, options, timeout } = ${payload};
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout * 1000);

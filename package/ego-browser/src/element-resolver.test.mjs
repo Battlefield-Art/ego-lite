@@ -30,13 +30,13 @@ test("resolveElementCenter computes the center from a valid box model", async ()
   refMap.add("5", 100, "button", "ok");
   const cdp = new FakeCDP(async (method) => {
     if (method === "DOM.getBoxModel") {
-      return { model: { content: [0, 0, 10, 0, 10, 10, 0, 10] } };
+      return { model: { content: [10, 20, 30, 20, 30, 60, 10, 60] } };
     }
     return {};
   });
   const point = await resolveElementCenter(cdp, undefined, refMap, "@5");
-  assert.equal(point.x, 5);
-  assert.equal(point.y, 5);
+  assert.equal(point.x, 20);
+  assert.equal(point.y, 40);
 });
 
 test("degenerate box model throws transient instead of returning (0,0)", async () => {
@@ -118,4 +118,102 @@ test("role locator with degenerate box model throws transient", async () => {
       return true;
     },
   );
+});
+
+test("css locator matched 0 elements is transient", async () => {
+  const cdp = new FakeCDP(async (method) => {
+    if (method === "Runtime.evaluate") {
+      return {
+        result: {
+          value: { error: "Locator css:.missing matched 0 elements" },
+        },
+      };
+    }
+    return {};
+  });
+  await assert.rejects(
+    () =>
+      resolveElementCenter(cdp, undefined, new RefMap(), "loc=css:.missing"),
+    (error) => {
+      assert.ok(error instanceof ElementResolutionError);
+      assert.equal(error.kind, "transient");
+      return true;
+    },
+  );
+});
+
+test("css locator matched multiple elements is permanent", async () => {
+  const cdp = new FakeCDP(async (method) => {
+    if (method === "Runtime.evaluate") {
+      return {
+        result: {
+          value: { error: "Locator css:.duplicate matched 2 elements" },
+        },
+      };
+    }
+    return {};
+  });
+  await assert.rejects(
+    () =>
+      resolveElementCenter(cdp, undefined, new RefMap(), "loc=css:.duplicate"),
+    (error) => {
+      assert.ok(error instanceof ElementResolutionError);
+      assert.equal(error.kind, "permanent");
+      return true;
+    },
+  );
+});
+
+test("role locator matches numeric AX names", async () => {
+  const cdp = new FakeCDP(async (method) => {
+    if (method === "Accessibility.getFullAXTree") {
+      return {
+        nodes: [
+          {
+            role: { value: "button" },
+            name: { value: 7 },
+            backendDOMNodeId: 100,
+          },
+        ],
+      };
+    }
+    if (method === "DOM.getBoxModel") {
+      return { model: { content: [10, 20, 30, 20, 30, 60, 10, 60] } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    "loc=role:button[name=7]",
+  );
+  assert.deepEqual(point, { x: 20, y: 40, sessionId: undefined });
+});
+
+test("role locator matches boolean AX names", async () => {
+  const cdp = new FakeCDP(async (method) => {
+    if (method === "Accessibility.getFullAXTree") {
+      return {
+        nodes: [
+          {
+            role: { value: "button" },
+            name: { value: true },
+            backendDOMNodeId: 100,
+          },
+        ],
+      };
+    }
+    if (method === "DOM.getBoxModel") {
+      return { model: { content: [10, 20, 30, 20, 30, 60, 10, 60] } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    "loc=role:button[name=true]",
+  );
+  assert.deepEqual(point, { x: 20, y: 40, sessionId: undefined });
 });

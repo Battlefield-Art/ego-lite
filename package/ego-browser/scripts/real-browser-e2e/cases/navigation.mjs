@@ -1,6 +1,6 @@
 export function navigationCase() {
   return `
-    await switchTaskSpace(taskName);
+    await useOrCreateTaskSpace(taskName);
     const home = await resetHome();
 
     const info = await pageInfo();
@@ -19,8 +19,10 @@ export function navigationCase() {
 
     const real = await ensureRealTab();
     assert(real && real.targetId, "ensureRealTab returns a real tab");
+    const realTabListed = (await listTabs()).some((t) => t.targetId === real.targetId);
+    assert(realTabListed, "ensureRealTab target appears in listTabs");
 
-    const reused = await openOrReuseTab(baseUrl + "/", { wait: true, timeout: 10 });
+    const reused = await openOrReuseTab(baseUrl + "/", { wait: true, timeout: 10000 });
     assertEqual(reused.reused, true, "openOrReuseTab reuses exact home URL");
 
     const byOrigin = await openOrReuseTab(baseUrl + "/not-opened", {
@@ -44,13 +46,13 @@ export function navigationCase() {
 
     const secondary = await openOrReuseTab(baseUrl + "/secondary", {
       wait: true,
-      timeout: 10,
+      timeout: 10000,
     });
     await switchTab(secondary);
-    assert(await waitForLoad({ timeout: 10 }), "secondary tab loads before target-id evaluation");
-    const secondaryTitleViaTarget = await js("return document.title", secondary.targetId);
+    assert(await waitForLoadState("load", { timeout: 10000 }), "secondary tab loads before target-id evaluation");
+    const secondaryTitleViaTarget = await evaluate("return document.title", secondary.targetId);
     assertEqual(secondaryTitleViaTarget, "ego-lite secondary", "js evaluates against explicit target id");
-    const homeTitleViaTarget = await js("return document.title", home.targetId);
+    const homeTitleViaTarget = await evaluate("return document.title", home.targetId);
     assertEqual(homeTitleViaTarget, "ego-lite helper e2e", "js target id leaves current tab independent");
 
     const secondaryByIncludes = await openOrReuseTab("/secondary", {
@@ -68,7 +70,7 @@ export function navigationCase() {
 
     const closeCurrent = await openOrReuseTab(baseUrl + "/secondary?close=current", {
       wait: true,
-      timeout: 10,
+      timeout: 10000,
     });
     await switchTab(closeCurrent);
     const currentClosedId = await closeTab();
@@ -84,22 +86,22 @@ export function navigationCase() {
       "closeTab validates empty target id"
     );
 
-    await gotoUrl(baseUrl + "/nav-target");
-    assert(await waitForLoad({ timeout: 10 }), "waitForLoad observes gotoUrl navigation");
+    await goto(baseUrl + "/nav-target", { waitUntil: "commit" });
+    assert(await waitForLoadState("load", { timeout: 10000 }), "waitForLoadState observes goto navigation");
     const navInfo = await pageInfo();
-    assertEqual(navInfo.title, "ego-lite nav target", "gotoUrl navigates current tab");
+    assertEqual(navInfo.title, "ego-lite nav target", "goto navigates current tab");
 
-    const noWaitNav = await gotoAndWait(baseUrl + "/nav-target?no-wait=1", {
-      wait: false,
+    const noWaitNav = await goto(baseUrl + "/nav-target?no-wait=1", {
+      waitUntil: "commit",
     });
-    assertEqual(noWaitNav.loaded, false, "gotoAndWait supports wait:false");
-    assert(await waitForLoad({ timeout: 10 }), "waitForLoad can follow wait:false navigation");
+    assertEqual(noWaitNav.loaded, false, "goto supports waitUntil:commit");
+    assert(await waitForLoadState("load", { timeout: 10000 }), "waitForLoadState can follow waitUntil:commit navigation");
 
-    const nav = await gotoAndWait(baseUrl + "/", { timeout: 10, settle: 0.1 });
-    assert(nav.loaded, "gotoAndWait returns loaded true");
+    const nav = await goto(baseUrl + "/", { timeout: 10000, settle: 100 });
+    assert(nav.loaded, "goto returns loaded true");
 
     const frame = await iframeTarget("/frame.html");
-    assert(frame === null || typeof frame === "string", "iframeTarget returns a target id or null");
+    assert(frame === null || (typeof frame === "string" && frame.length > 0), "iframeTarget returns a non-empty session id or null");
     const missingFrame = await iframeTarget("/missing-frame-for-e2e");
     assertEqual(missingFrame, null, "iframeTarget returns null for missing frames");
   `;

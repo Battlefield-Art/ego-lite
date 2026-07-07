@@ -1,6 +1,6 @@
 export function observationCase() {
   return `
-    await switchTaskSpace(taskName);
+    await useOrCreateTaskSpace(taskName);
     await resetHome();
 
     const raw = await snapshotRaw({ includeStableLocator: true });
@@ -13,13 +13,13 @@ export function observationCase() {
     });
     assertIncludes(compactRaw.content || "", "Helper e2e fixture", "snapshotRaw accepts compact options");
 
-    const snap = await snapshot({
+    const snap = await snapshotRaw({
       scope: "full_page",
       includeActionMarks: true,
       includeStableLocator: true,
     });
-    assertIncludes(snap.content || "", "Click counter", "snapshot contains button text");
-    assert(Array.isArray(snap.refs), "snapshot returns refs array");
+    assertIncludes(snap.content || "", "Click counter", "snapshotRaw contains button text");
+    assert(Array.isArray(snap.refs), "snapshotRaw returns refs array");
 
     const buttonRef = (snap.refs || []).find(
       (ref) =>
@@ -27,17 +27,17 @@ export function observationCase() {
         (String(ref?.name || "").includes("Increment counter") ||
           String(ref?.name || "").includes("Click counter"))
     )?.backendNodeId;
-    assert(buttonRef, "snapshot exposes a reusable backend ref for the button");
+    assert(buttonRef, "snapshotRaw exposes a reusable backend ref for the button");
     const atRefCenter = await elementCenter("@" + buttonRef);
     assert(Number.isFinite(atRefCenter.x) && Number.isFinite(atRefCenter.y), "@ref resolves to coordinates");
     const namedRefCenter = await elementCenter("ref=" + buttonRef);
     assert(Number.isFinite(namedRefCenter.x) && Number.isFinite(namedRefCenter.y), "ref= resolves to coordinates");
 
-    const text = await snapshotText({ scope: "full_page" });
-    assertIncludes(text, "Text input", "snapshotText returns text content");
+    const text = await snapshot({ scope: "full_page" });
+    assertIncludes(text, "Text input", "snapshot returns text content");
 
-    const viewportText = await snapshotText({ scope: "only_within_viewport" });
-    assertIncludes(viewportText, "Helper e2e fixture", "snapshotText supports viewport scope");
+    const viewportText = await snapshot({ scope: "only_within_viewport" });
+    assertIncludes(viewportText, "Helper e2e fixture", "snapshot supports viewport scope");
 
     const center = await elementCenter("#click-button");
     assert(Number.isFinite(center.x) && Number.isFinite(center.y), "elementCenter returns coordinates");
@@ -82,25 +82,28 @@ export function observationCase() {
       "elementCenter reports missing elements"
     );
 
-    const screenshotPath = await captureScreenshot(undefined, { full: false });
+    const screenshotPath = await screenshot({ path: undefined, fullPage: false });
     const screenshotStat = await stat(screenshotPath);
-    assert(screenshotStat.size > 0, "captureScreenshot writes a non-empty png");
+    assert(screenshotStat.size > 100, "screenshot writes a non-trivial png");
+    const screenshotBuf = await readFile(screenshotPath);
+    assertEqual(screenshotBuf[0], 137, "screenshot starts with PNG magic byte 137");
+    assertEqual(screenshotBuf[1], 80, "screenshot has PNG header byte P (80)");
 
-    const explicitPath = await captureScreenshot(explicitScreenshotPath, { full: false });
-    assertEqual(explicitPath, explicitScreenshotPath, "captureScreenshot returns explicit path");
+    const explicitPath = await screenshot({ path: explicitScreenshotPath, fullPage: false });
+    assertEqual(explicitPath, explicitScreenshotPath, "screenshot returns explicit path");
     const explicitStat = await stat(explicitPath);
-    assert(explicitStat.size > 0, "captureScreenshot writes explicit path");
+    assert(explicitStat.size > 0, "screenshot writes explicit path");
 
-    const fullScreenshotPath = await captureScreenshot(undefined, { full: true });
+    const fullScreenshotPath = await screenshot({ path: undefined, fullPage: true });
     const fullScreenshotStat = await stat(fullScreenshotPath);
-    assert(fullScreenshotStat.size > 0, "captureScreenshot supports full page");
+    assert(fullScreenshotStat.size > 0, "screenshot supports full page");
 
-    const rawScreenshotPath = await captureScreenshot(undefined, {
+    const rawScreenshotPath = await screenshot({ path: undefined,
       raw: true,
       clip: { x: 0, y: 0, width: 120, height: 120, scale: 1 },
     });
     const rawScreenshotStat = await stat(rawScreenshotPath);
-    assert(rawScreenshotStat.size > 0, "captureScreenshot supports raw clips");
+    assert(rawScreenshotStat.size > 0, "screenshot supports raw clips");
 
     await cdp("Network.enable");
     await browserFetch("/api/text", { timeout: 5 });
@@ -110,32 +113,32 @@ export function observationCase() {
     assertEqual(eventsAfterDrain.length, 0, "drainEvents clears the event buffer");
 
     /* dynamic DOM — add element, verify snapshot picks it up */
-    cliLog(JSON.stringify({ observationStep: "dynamic DOM" }));
+    console.log(JSON.stringify({ observationStep: "dynamic DOM" }));
     await click("#remove-element");
-    await wait(0.1);
-    const textBefore = await snapshotText({ scope: "full_page" });
+    await waitForTimeout(100);
+    const textBefore = await snapshot({ scope: "full_page" });
     assert(!String(textBefore).includes("Dynamic!"), "snapshot text does not contain dynamic element before creation");
 
     await click("#add-element");
-    await waitForElement("#dynamic-element", { timeout: 3, visible: true });
-    await wait(0.2);
-    const textAfter = await snapshotText({ scope: "full_page" });
+    await waitForSelector("#dynamic-element", { timeout: 3000, state: "visible" });
+    await waitForTimeout(200);
+    const textAfter = await snapshot({ scope: "full_page" });
     assertIncludes(String(textAfter), "Dynamic!", "snapshot text includes dynamically created element");
 
     /* iframe interaction — evaluate JS inside the iframe */
-    cliLog(JSON.stringify({ observationStep: "iframe" }));
+    console.log(JSON.stringify({ observationStep: "iframe" }));
     const frameTarget = await iframeTarget("/frame.html");
     if (frameTarget) {
-      const iframeMarkerText = await js(
+      const iframeMarkerText = await evaluate(
         "return document.querySelector('#iframe-marker')?.textContent",
         frameTarget
       );
       assertEqual(iframeMarkerText, "iframe target", "js evaluates inside iframe using targetId");
 
-      const iframeTitle = await js("return document.title", frameTarget);
+      const iframeTitle = await evaluate("return document.title", frameTarget);
       assertEqual(iframeTitle, "ego-lite iframe", "js reads iframe page title via targetId");
     } else {
-      cliLog(JSON.stringify({ iframeWarning: "iframe target not available, skipping iframe tests" }));
+      console.log(JSON.stringify({ iframeWarning: "iframe target not available, skipping iframe tests" }));
     }
   `;
 }
