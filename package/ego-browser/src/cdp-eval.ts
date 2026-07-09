@@ -28,26 +28,40 @@ export async function cdp(method, params: any = {}, sessionId = undefined) {
 /**
  * Evaluate JavaScript in the current page, Playwright-style.
  * @param {string | Function} pageFunction JavaScript expression string or function called with arg.
+ *   String expressions with top-level return statements are auto-wrapped in an IIFE for compatibility.
  * @param {unknown} [arg] Optional serializable argument passed to function pageFunctions.
+ *   For legacy string expressions, a string second argument is treated as a target id to evaluate in.
  * @returns {Promise<any>} Runtime.evaluate return-by-value result.
  */
 export async function evaluate(pageFunction, arg = undefined) {
   let expression;
+  let sessionId;
   if (typeof pageFunction === "function") {
     expression = `(${pageFunction.toString()})(${serializedArg(arg)})`;
   } else if (typeof pageFunction === "string") {
-    if (arg !== undefined) {
+    if (arg !== undefined && typeof arg !== "string") {
       throw new TypeError(
-        "page.evaluate string form does not accept an arg; pass a function pageFunction instead",
+        "page.evaluate string form only accepts a legacy target id as its second argument; pass a function pageFunction to use args",
       );
     }
     expression = pageFunction;
+    if (arg !== undefined) {
+      sessionId = (
+        await cdp("Target.attachToTarget", {
+          targetId: arg,
+          flatten: true,
+        })
+      ).sessionId;
+    }
   } else {
     throw new TypeError(
       `page.evaluate expects a string expression or function pageFunction, got ${pageFunction === null ? "null" : typeof pageFunction}`,
     );
   }
-  return runtimeEvaluate(expression, undefined, true);
+  if (hasReturnStatement(expression) && !expression.trim().startsWith("(")) {
+    expression = `(function(){${expression}})()`;
+  }
+  return runtimeEvaluate(expression, sessionId, true);
 }
 
 async function runtimeEvaluate(
@@ -138,6 +152,71 @@ export function decodeUnserializableJsValue(value) {
 function jsSnippet(expression, limit = 160) {
   const snippet = expression.trim().replace(/\n/g, "\\n");
   return snippet.length > limit ? `${snippet.slice(0, limit - 3)}...` : snippet;
+}
+
+export function hasReturnStatement(expression) {
+  let i = 0;
+  let stateName = "code";
+  let quote = "";
+  while (i < expression.length) {
+    const ch = expression[i];
+    const next = expression[i + 1] || "";
+    if (stateName === "code") {
+      if (ch === "'" || ch === '"' || ch === "`") {
+        stateName = "string";
+        quote = ch;
+        i += 1;
+        continue;
+      }
+      if (ch === "/" && next === "/") {
+        stateName = "line_comment";
+        i += 2;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        stateName = "block_comment";
+        i += 2;
+        continue;
+      }
+      if (expression.startsWith("return", i)) {
+        const before = i > 0 ? expression[i - 1] : "";
+        const after = expression[i + 6] || "";
+        if (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after)) {
+          return true;
+        }
+      }
+      i += 1;
+      continue;
+    }
+    if (stateName === "line_comment") {
+      if (ch === "\n") {
+        stateName = "code";
+      }
+      i += 1;
+      continue;
+    }
+    if (stateName === "block_comment") {
+      if (ch === "*" && next === "/") {
+        stateName = "code";
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    if (stateName === "string") {
+      if (ch === "\\") {
+        i += 2;
+        continue;
+      }
+      if (ch === quote) {
+        stateName = "code";
+        quote = "";
+      }
+      i += 1;
+    }
+  }
+  return false;
 }
 
 function serializedArg(arg) {
