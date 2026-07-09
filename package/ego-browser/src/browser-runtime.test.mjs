@@ -11,6 +11,7 @@ import {
   clearPreferredTarget,
   ensureSession,
   browserSnapshotRefsToRefMap,
+  waitForBrowserEvent,
 } from "../dist/src/browser-runtime.js";
 import { state } from "../dist/src/state.js";
 
@@ -234,6 +235,48 @@ test("drainBrowserEvents collects CDP events and clears the buffer", async () =>
 
     const second = drainBrowserEvents();
     assert.equal(second.length, 0, "second drain returns empty");
+  } finally {
+    cleanup();
+  }
+});
+
+test("waitForBrowserEvent resolves future matching events", async () => {
+  installAutoEgo();
+  try {
+    await browserCdp("Runtime.evaluate", { expression: "1" });
+    const promise = waitForBrowserEvent(
+      (event) => event.method === "Page.downloadWillBegin",
+      500,
+    );
+    fireEvent("Page.downloadWillBegin", {
+      guid: "download-1",
+      suggestedFilename: "file.png",
+    });
+    const event = await promise;
+    assert.equal(event.params.guid, "download-1");
+  } finally {
+    cleanup();
+  }
+});
+
+test("waitForBrowserEvent ignores events that happened before waiting", async () => {
+  installAutoEgo();
+  try {
+    await browserCdp("Runtime.evaluate", { expression: "1" });
+    fireEvent("Page.downloadWillBegin", {
+      guid: "old-download",
+      suggestedFilename: "old.png",
+    });
+    const promise = waitForBrowserEvent(
+      (event) => event.method === "Page.downloadWillBegin",
+      500,
+    );
+    fireEvent("Page.downloadWillBegin", {
+      guid: "new-download",
+      suggestedFilename: "new.png",
+    });
+    const event = await promise;
+    assert.equal(event.params.guid, "new-download");
   } finally {
     cleanup();
   }

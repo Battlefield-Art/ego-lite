@@ -88,7 +88,8 @@ export async function loadLearnedContext(
         toolType: "node",
         description: schema.description || "",
         args: schema.args || {},
-        example: `await runSiteTool("${siteId}", "${toolName}", { ... })`,
+        returns: schema.returns || null,
+        example: `await site.runTool("${siteId}", "${toolName}", { ... })`,
       });
     }
 
@@ -100,7 +101,8 @@ export async function loadLearnedContext(
         toolType: "browser",
         description: schema.description || "",
         args: schema.args || {},
-        example: `await runSiteBrowserTool("${siteId}", "${toolName}", { ... })`,
+        returns: schema.returns || null,
+        example: `await site.runBrowserTool("${siteId}", "${toolName}", { ... })`,
       });
     }
   }

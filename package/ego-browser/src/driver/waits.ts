@@ -1,19 +1,40 @@
 import { state } from "../state.js";
-import { cdp } from "../cdp-eval.js";
+import { cdp, runtimeValue } from "../cdp-eval.js";
 import { resolveHandle, releaseHandle } from "./element-ops.js";
 import { ElementResolutionError } from "../element-resolver.js";
 import { waitForDocumentLoad } from "./load.js";
 import { drainEvents } from "./observe.js";
+import { waitForBrowserEvent } from "../browser-runtime.js";
 
 type WaitForSelectorOptions = {
   timeout?: number;
   state?: "visible" | "attached";
 };
 
+type WaitForFunctionOptions = {
+  timeout?: number;
+  polling?: number;
+};
+
+type WaitForURLOptions = {
+  timeout?: number;
+  waitUntil?: LoadState | "commit";
+};
+
 type WaitForLoadStateOptions = {
   timeout?: number;
   idleMs?: number;
 };
+
+type WaitForNetworkOptions = {
+  timeout?: number;
+};
+
+type LoadState = "load" | "domcontentloaded" | "networkidle";
+
+let networkEventUsers = 0;
+let networkEventsOwnDomain = false;
+let networkEnableInFlight: Promise<void> | null = null;
 
 /**
  * Sleep for a fixed number of milliseconds.
@@ -25,24 +46,435 @@ export async function waitForTimeout(ms = 1000) {
 }
 
 /**
+ * Poll a page function or expression until it returns a truthy value.
+ * @param {string|Function} pageFunction Browser-side expression or function.
+ * @param {unknown|{timeout?: number, polling?: number}} [argOrOptions] Optional function argument, or options.
+ * @param {{timeout?: number, polling?: number}} [options] timeout and polling in milliseconds.
+ * @returns {Promise<unknown|false>} The first truthy return value, or false on timeout.
+ */
+export async function waitForFunction(
+  pageFunction,
+  argOrOptions: unknown | WaitForFunctionOptions = undefined,
+  options: WaitForFunctionOptions = {},
+) {
+  const [arg, effectiveOptions] = normalizeWaitForFunctionArgs(
+    arguments.length,
+    argOrOptions,
+    options,
+  );
+  const timeout = effectiveOptions.timeout ?? state.defaultTimeout;
+  const polling = effectiveOptions.polling ?? 100;
+  const deadline = state.now() + timeout;
+  const expression = buildWaitForFunctionExpression(pageFunction, arg);
+  while (state.now() < deadline) {
+    const response = await cdp("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    const value = runtimeValue(response, expression);
+    if (value) {
+      return value;
+    }
+    await state.sleep(polling);
+  }
+  return false;
+}
+
+/**
+ * Wait for the current page URL to match a string, glob, RegExp, or predicate.
+ * @param {string|RegExp|Function} url URL matcher. Strings with * are treated as globs; other strings are exact.
+ * @param {{timeout?: number, waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit"}} [options]
+ * @returns {Promise<boolean>} True when matched before timeout.
+ */
+export async function waitForURL(url, options: WaitForURLOptions = {}) {
+  const timeout = options.timeout ?? state.defaultTimeout;
+  const deadline = state.now() + timeout;
+  while (state.now() < deadline) {
+    const current = runtimeValue(
+      await cdp("Runtime.evaluate", {
+        expression: "location.href",
+        returnByValue: true,
+        awaitPromise: false,
+      }),
+      "location.href",
+    );
+    if (urlMatches(current, url)) {
+      if (options.waitUntil && options.waitUntil !== "commit") {
+        return waitForLoadState(options.waitUntil, {
+          timeout: Math.max(0, deadline - state.now()),
+        });
+      }
+      return true;
+    }
+    await state.sleep(100);
+  }
+  return false;
+}
+
+/**
+ * Wait for a network request whose URL or request facade matches.
+ * @param {string|RegExp|Function} urlOrPredicate Exact URL, RegExp, or synchronous request predicate.
+ * @param {{timeout?: number}} [options] timeout in milliseconds; 0 disables timeout.
+ * @returns {Promise<object>} Playwright-style request facade.
+ */
+export async function waitForRequest(
+  urlOrPredicate,
+  options: WaitForNetworkOptions = {},
+) {
+  return waitForNetworkMatch("request", urlOrPredicate, options);
+}
+
+/**
+ * Wait for a network response whose URL or response facade matches.
+ * @param {string|RegExp|Function} urlOrPredicate Exact URL, RegExp, or synchronous response predicate.
+ * @param {{timeout?: number}} [options] timeout in milliseconds; 0 disables timeout.
+ * @returns {Promise<object>} Playwright-style response facade.
+ */
+export async function waitForResponse(
+  urlOrPredicate,
+  options: WaitForNetworkOptions = {},
+) {
+  return waitForNetworkMatch("response", urlOrPredicate, options);
+}
+
+/**
  * Wait for a page load state. `"networkidle"` waits until network traffic goes
  * idle; `"domcontentloaded"` until the DOM is interactive; otherwise until
  * document.readyState is complete.
- * @param {"load"|"domcontentloaded"|"networkidle"} [loadState="load"] Load state to wait for.
+ * @param {"load"|"domcontentloaded"|"networkidle"|{timeout?: number, idleMs?: number}} [loadState="load"] Load state to wait for, or options for the default "load" state.
  * @param {{timeout?: number, idleMs?: number}} [options] timeout in milliseconds; idleMs only applies to "networkidle".
  * @returns {Promise<boolean>} True when the state was reached before timeout.
  */
 export async function waitForLoadState(
-  loadState: "load" | "domcontentloaded" | "networkidle" = "load",
+  loadState: LoadState | WaitForLoadStateOptions = "load",
   options: WaitForLoadStateOptions = {},
 ) {
-  if (loadState === "networkidle") {
-    return waitForNetworkIdle(options);
+  const [stateName, effectiveOptions] = normalizeLoadStateArgs(
+    loadState,
+    options,
+  );
+  if (stateName === "networkidle") {
+    return waitForNetworkIdle(effectiveOptions);
   }
   return waitForDocumentLoad({
-    timeout: options.timeout,
-    until: loadState === "domcontentloaded" ? "domcontentloaded" : "load",
+    timeout: effectiveOptions.timeout,
+    until: stateName === "domcontentloaded" ? "domcontentloaded" : "load",
   });
+}
+
+function normalizeLoadStateArgs(
+  loadState: LoadState | WaitForLoadStateOptions,
+  options: WaitForLoadStateOptions,
+): [LoadState, WaitForLoadStateOptions] {
+  if (loadState && typeof loadState === "object") {
+    return ["load", loadState];
+  }
+  return [(loadState || "load") as LoadState, options];
+}
+
+function normalizeWaitForFunctionArgs(
+  length: number,
+  argOrOptions: unknown | WaitForFunctionOptions,
+  options: WaitForFunctionOptions,
+): [unknown, WaitForFunctionOptions] {
+  if (length >= 3) {
+    return [argOrOptions, options];
+  }
+  if (isWaitForFunctionOptions(argOrOptions)) {
+    return [undefined, argOrOptions];
+  }
+  return [argOrOptions, {}];
+}
+
+function isWaitForFunctionOptions(value): value is WaitForFunctionOptions {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return "timeout" in value || "polling" in value;
+}
+
+function buildWaitForFunctionExpression(pageFunction, arg) {
+  if (typeof pageFunction === "function") {
+    return `(${pageFunction.toString()})(${JSON.stringify(arg)})`;
+  }
+  if (typeof pageFunction !== "string") {
+    throw new TypeError(
+      `waitForFunction expects a string expression or function, got ${pageFunction === null ? "null" : typeof pageFunction}`,
+    );
+  }
+  return `(${pageFunction})`;
+}
+
+function urlMatches(current, matcher) {
+  if (matcher instanceof RegExp) {
+    return matcher.test(current);
+  }
+  if (typeof matcher === "function") {
+    return Boolean(matcher(new URL(current)));
+  }
+  if (typeof matcher !== "string") {
+    throw new TypeError(
+      `waitForURL expects a string, RegExp, or function matcher, got ${matcher === null ? "null" : typeof matcher}`,
+    );
+  }
+  if (matcher.includes("*")) {
+    return globToRegExp(matcher).test(current);
+  }
+  return current === matcher;
+}
+
+function globToRegExp(glob) {
+  let source = "^";
+  for (let i = 0; i < glob.length; i += 1) {
+    const char = glob[i];
+    if (char === "*") {
+      if (glob[i + 1] === "*") {
+        source += ".*";
+        i += 1;
+      } else {
+        source += "[^/]*";
+      }
+    } else {
+      source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+  }
+  return new RegExp(`${source}$`);
+}
+
+async function waitForNetworkMatch(
+  kind: "request" | "response",
+  matcher,
+  options: WaitForNetworkOptions,
+) {
+  const timeout = networkTimeout(options);
+  const requests = new Map();
+  const networkEvents = acquireNetworkEvents();
+  let matched;
+  try {
+    void networkEvents.ready;
+    await waitForBrowserEvent((event) => {
+      matched = processNetworkEvent(kind, matcher, event, requests, timeout);
+      return Boolean(matched);
+    }, browserEventTimeout(timeout));
+    return matched;
+  } catch (error) {
+    if (/page\.waitForEvent timed out/i.test(error?.message || "")) {
+      throw new Error(
+        `page.waitFor${kind === "request" ? "Request" : "Response"} timed out after ${timeout}ms`,
+      );
+    }
+    throw error;
+  } finally {
+    await networkEvents.release();
+  }
+}
+
+function processNetworkEvent(kind, matcher, event, requests, timeout) {
+  const method = event?.method;
+  const params = event?.params || {};
+  if (method === "Network.requestWillBeSent") {
+    const previousRequest = requests.get(params.requestId);
+    if (kind === "response" && params.redirectResponse) {
+      const response = createResponseFacade(
+        {
+          requestId: params.requestId,
+          response: params.redirectResponse,
+          request: previousRequest,
+        },
+        timeout,
+      );
+      if (networkMatches(response, matcher, kind)) {
+        return response;
+      }
+    }
+    const request = createRequestInfo(params);
+    requests.set(params.requestId, request);
+    if (kind === "request") {
+      const facade = createRequestFacade(request);
+      if (networkMatches(facade, matcher, kind)) {
+        return facade;
+      }
+    }
+    return null;
+  }
+  if (kind === "response" && method === "Network.responseReceived") {
+    const response = createResponseFacade(
+      {
+        requestId: params.requestId,
+        response: params.response || {},
+        request: requests.get(params.requestId),
+      },
+      timeout,
+    );
+    if (networkMatches(response, matcher, kind)) {
+      return response;
+    }
+  }
+  return null;
+}
+
+function networkMatches(facade, matcher, kind) {
+  if (typeof matcher === "string") {
+    return facade.url() === matcher;
+  }
+  if (matcher instanceof RegExp) {
+    matcher.lastIndex = 0;
+    return matcher.test(facade.url());
+  }
+  if (typeof matcher === "function") {
+    const result = matcher(facade);
+    if (result && typeof result.then === "function") {
+      throw new Error(
+        `page.waitFor${kind === "request" ? "Request" : "Response"} does not support async predicates`,
+      );
+    }
+    return Boolean(result);
+  }
+  throw new TypeError(
+    `page.waitFor${kind === "request" ? "Request" : "Response"} expects a string, RegExp, or function matcher, got ${matcher === null ? "null" : typeof matcher}`,
+  );
+}
+
+function createRequestInfo(params) {
+  const request = params.request || {};
+  return {
+    requestId: params.requestId,
+    url: request.url || "",
+    method: request.method || "",
+    headers: normalizeHeaders(request.headers),
+    postData: request.postData ?? null,
+    resourceType: String(params.type || "").toLowerCase(),
+  };
+}
+
+function createRequestFacade(info) {
+  return {
+    url: () => info.url,
+    method: () => info.method,
+    headers: () => ({ ...info.headers }),
+    postData: () => info.postData,
+    resourceType: () => info.resourceType,
+  };
+}
+
+function createResponseFacade(info, timeout) {
+  const response = info.response || {};
+  const request =
+    info.request ||
+    createRequestInfo({
+      requestId: info.requestId,
+      request: {
+        url: response.url || "",
+        method: "",
+        headers: response.requestHeaders || {},
+      },
+      type: response.type,
+    });
+  const status = Number(response.status || 0);
+  const headers = normalizeHeaders(response.headers);
+  const facade: any = {
+    url: () => response.url || request.url || "",
+    status: () => status,
+    statusText: () => response.statusText || "",
+    ok: () => status >= 200 && status <= 299,
+    headers: () => ({ ...headers }),
+    request: () => createRequestFacade(request),
+    body: async () => {
+      const body = await readResponseBody(info.requestId, timeout);
+      return body.base64Encoded
+        ? Buffer.from(body.body || "", "base64")
+        : Buffer.from(body.body || "", "utf8");
+    },
+    text: async () => {
+      const body = await readResponseBody(info.requestId, timeout);
+      return body.base64Encoded
+        ? Buffer.from(body.body || "", "base64").toString("utf8")
+        : body.body || "";
+    },
+  };
+  facade.json = async () => JSON.parse(await facade.text());
+  return facade;
+}
+
+async function readResponseBody(requestId, timeout) {
+  if (!requestId) {
+    throw new Error("response body is unavailable without a requestId");
+  }
+  try {
+    return await cdp("Network.getResponseBody", { requestId });
+  } catch (firstError) {
+    await waitForBrowserEvent(
+      (event) =>
+        (event?.method === "Network.loadingFinished" ||
+          event?.method === "Network.loadingFailed") &&
+        event?.params?.requestId === requestId,
+      browserEventTimeout(timeout),
+    ).catch(() => null);
+    try {
+      return await cdp("Network.getResponseBody", { requestId });
+    } catch (error) {
+      throw new Error(
+        `response body is unavailable for request ${requestId}: ${error?.message || firstError?.message || error}`,
+      );
+    }
+  }
+}
+
+function normalizeHeaders(headers = {}) {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers || {})) {
+    out[String(name).toLowerCase()] = String(value);
+  }
+  return out;
+}
+
+function networkTimeout(options: WaitForNetworkOptions) {
+  const timeout = options.timeout ?? state.defaultTimeout;
+  if (!Number.isFinite(timeout) || timeout < 0) {
+    throw new Error("network wait timeout must be a non-negative number");
+  }
+  return timeout;
+}
+
+function browserEventTimeout(timeout) {
+  return timeout === 0 ? 2147483647 : Math.min(timeout, 2147483647);
+}
+
+function acquireNetworkEvents() {
+  if (networkEventUsers === 0 && !state.networkDomainEnabled) {
+    networkEnableInFlight = cdp("Network.enable")
+      .then(() => {
+        networkEventsOwnDomain = true;
+      })
+      .catch(() => {
+        // Some bridges do not expose the Network domain. The waiter will time out
+        // with the normal waitForRequest/waitForResponse error.
+      })
+      .finally(() => {
+        networkEnableInFlight = null;
+      });
+  }
+  networkEventUsers += 1;
+  let released = false;
+  return {
+    ready: networkEnableInFlight || Promise.resolve(),
+    release: async () => {
+      if (released) return;
+      released = true;
+      networkEventUsers = Math.max(0, networkEventUsers - 1);
+      if (networkEventUsers > 0) return;
+      if (networkEnableInFlight) {
+        await networkEnableInFlight;
+      }
+      if (networkEventsOwnDomain) {
+        networkEventsOwnDomain = false;
+        await cdp("Network.disable").catch(() => {
+          // Best-effort cleanup; the next wait can enable the domain again.
+        });
+      }
+    },
+  };
 }
 
 /**
@@ -55,7 +487,7 @@ export async function waitForSelector(
   selector: string,
   options: WaitForSelectorOptions = {},
 ) {
-  const timeout = options.timeout ?? 10000;
+  const timeout = options.timeout ?? state.defaultTimeout;
   const requireVisible = options.state === "visible";
   const deadline = state.now() + timeout;
   const visibilityFn =
@@ -112,10 +544,8 @@ async function waitForNetworkIdle(options: WaitForLoadStateOptions = {}) {
   const deadline = state.now() + timeout;
   let lastActivity = state.now();
   const inflight = new Set();
-  const ownsNetworkDomain = !state.networkDomainEnabled;
-  await cdp("Network.enable").catch(() => {
-    // Domain may be unsupported by the bridge; fall back to passive observation.
-  });
+  const networkEvents = acquireNetworkEvents();
+  await networkEvents.ready;
   try {
     while (state.now() < deadline) {
       for (const event of await drainEvents()) {
@@ -141,10 +571,6 @@ async function waitForNetworkIdle(options: WaitForLoadStateOptions = {}) {
     }
     return false;
   } finally {
-    if (ownsNetworkDomain) {
-      await cdp("Network.disable").catch(() => {
-        // Best-effort cleanup; keeps the event buffer from accumulating after the wait.
-      });
-    }
+    await networkEvents.release();
   }
 }

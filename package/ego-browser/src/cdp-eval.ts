@@ -2,8 +2,6 @@ import { send, state } from "./state.js";
 
 class TimeoutError extends Error {}
 
-let hasWarnedAboutFunctionJs = false;
-
 /**
  * Send a raw Chrome DevTools Protocol command.
  * @param {string} method CDP method name, for example Runtime.evaluate.
@@ -28,42 +26,28 @@ export async function cdp(method, params: any = {}, sessionId = undefined) {
 }
 
 /**
- * Evaluate JavaScript in the current page or a target tab.
- * @param {string | Function} expression JavaScript source string or a function whose body should be evaluated.
- *   Passing a function is accepted as a convenience but emits a one-time warning to stderr so callers can
- *   switch to the canonical string form. Top-level return statements in strings are auto-wrapped in an IIFE.
- * @param {string} [targetId] Optional target id to attach and evaluate in.
+ * Evaluate JavaScript in the current page, Playwright-style.
+ * @param {string | Function} pageFunction JavaScript expression string or function called with arg.
+ * @param {unknown} [arg] Optional serializable argument passed to function pageFunctions.
  * @returns {Promise<any>} Runtime.evaluate return-by-value result.
  */
-export async function evaluate(expression, targetId = undefined) {
-  if (typeof expression === "function") {
-    const source = expression.toString();
-    if (!hasWarnedAboutFunctionJs) {
-      hasWarnedAboutFunctionJs = true;
-      process.stderr.write(
-        `[ego-browser] evaluate() received a function and auto-wrapped it (${jsSnippet(source, 80)}).\n` +
-          `  evaluate() is a thin wrapper over CDP Runtime.evaluate; it takes a string expression,\n` +
-          `  not a Puppeteer/Playwright-style callable. Auto-wrap does NOT capture closure\n` +
-          `  variables and has NO args channel.\n` +
-          `  Prefer:\n` +
-          `    evaluate(\`<expression>\`)  // pure expression or explicit IIFE\n`,
+export async function evaluate(pageFunction, arg = undefined) {
+  let expression;
+  if (typeof pageFunction === "function") {
+    expression = `(${pageFunction.toString()})(${serializedArg(arg)})`;
+  } else if (typeof pageFunction === "string") {
+    if (arg !== undefined) {
+      throw new TypeError(
+        "page.evaluate string form does not accept an arg; pass a function pageFunction instead",
       );
     }
-    expression = `(${source})()`;
-  } else if (typeof expression !== "string") {
+    expression = pageFunction;
+  } else {
     throw new TypeError(
-      `evaluate() expects a string expression or function, got ${expression === null ? "null" : typeof expression}`,
+      `page.evaluate expects a string expression or function pageFunction, got ${pageFunction === null ? "null" : typeof pageFunction}`,
     );
   }
-  const sessionId = targetId
-    ? (await cdp("Target.attachToTarget", { targetId, flatten: true }))
-        .sessionId
-    : undefined;
-  let finalExpression = expression;
-  if (hasReturnStatement(expression) && !expression.trim().startsWith("(")) {
-    finalExpression = `(function(){${expression}})()`;
-  }
-  return runtimeEvaluate(finalExpression, sessionId, true);
+  return runtimeEvaluate(expression, undefined, true);
 }
 
 async function runtimeEvaluate(
@@ -156,67 +140,6 @@ function jsSnippet(expression, limit = 160) {
   return snippet.length > limit ? `${snippet.slice(0, limit - 3)}...` : snippet;
 }
 
-export function hasReturnStatement(expression) {
-  let i = 0;
-  let stateName = "code";
-  let quote = "";
-  while (i < expression.length) {
-    const ch = expression[i];
-    const next = expression[i + 1] || "";
-    if (stateName === "code") {
-      if (ch === "'" || ch === '"' || ch === "`") {
-        stateName = "string";
-        quote = ch;
-        i += 1;
-        continue;
-      }
-      if (ch === "/" && next === "/") {
-        stateName = "line_comment";
-        i += 2;
-        continue;
-      }
-      if (ch === "/" && next === "*") {
-        stateName = "block_comment";
-        i += 2;
-        continue;
-      }
-      if (expression.startsWith("return", i)) {
-        const before = i > 0 ? expression[i - 1] : "";
-        const after = expression[i + 6] || "";
-        if (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after)) {
-          return true;
-        }
-      }
-      i += 1;
-      continue;
-    }
-    if (stateName === "line_comment") {
-      if (ch === "\n") {
-        stateName = "code";
-      }
-      i += 1;
-      continue;
-    }
-    if (stateName === "block_comment") {
-      if (ch === "*" && next === "/") {
-        stateName = "code";
-        i += 2;
-        continue;
-      }
-      i += 1;
-      continue;
-    }
-    if (stateName === "string") {
-      if (ch === "\\") {
-        i += 2;
-        continue;
-      }
-      if (ch === quote) {
-        stateName = "code";
-        quote = "";
-      }
-      i += 1;
-    }
-  }
-  return false;
+function serializedArg(arg) {
+  return arg === undefined ? "" : JSON.stringify(arg);
 }

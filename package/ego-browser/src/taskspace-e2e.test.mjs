@@ -122,7 +122,7 @@ test("taskspace e2e creates and selects a missing task space", async () => {
   const result = await runTaskspaceScript(
     ego,
     `
-    const task = await useOrCreateTaskSpace("checkout-flow");
+    const task = await taskSpaces.useOrCreate("checkout-flow");
     console.log(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
@@ -159,7 +159,7 @@ test("taskspace e2e reuses an existing agent-owned task space", async () => {
   const result = await runTaskspaceScript(
     ego,
     `
-    const task = await useOrCreateTaskSpace(7);
+    const task = await taskSpaces.useOrCreate(7);
     console.log(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
@@ -191,7 +191,7 @@ test("taskspace e2e claims and selects an existing user-owned task space", async
   const result = await runTaskspaceScript(
     ego,
     `
-    const task = await claimTaskSpace("checkout-flow");
+    const task = await taskSpaces.claim("checkout-flow");
     console.log(JSON.stringify({ task, selected: ego.selectedId }));
   `,
   );
@@ -229,21 +229,23 @@ test("taskspace e2e useOrCreateTaskSpace selects user-owned spaces without claim
   // sees ego-browser's owned guidance block, not the raw native text.
   await assert.rejects(
     () =>
-      runTaskspaceScript(ego, `await useOrCreateTaskSpace("checkout-flow")`),
+      runTaskspaceScript(ego, `await taskSpaces.useOrCreate("checkout-flow")`),
     /has taken control of this task space/,
   );
   assert.deepEqual(ego.calls, [["listTaskSpaces"], ["useTaskSpace", 7]]);
 });
 
-test("taskspace e2e exposes newTaskSpace and claimTaskSpace as helpers", async () => {
+test("taskspace e2e exposes taskSpaces facade", async () => {
   const ego = new FakeEgo();
   const result = await runTaskspaceScript(
     ego,
     `
     console.log(JSON.stringify({
-      newType: typeof newTaskSpace,
-      switchType: typeof switchTaskSpace,
-      claimType: typeof claimTaskSpace,
+      taskSpacesType: typeof taskSpaces,
+      newType: typeof taskSpaces.new,
+      switchType: typeof taskSpaces.switch,
+      claimType: typeof taskSpaces.claim,
+      oldNewType: typeof newTaskSpace,
       rawClaimType: typeof ego.claimTaskSpace
     }));
   `,
@@ -251,9 +253,11 @@ test("taskspace e2e exposes newTaskSpace and claimTaskSpace as helpers", async (
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(firstJsonLine(result.stdout), {
+    taskSpacesType: "object",
     newType: "function",
     switchType: "function",
     claimType: "function",
+    oldNewType: "undefined",
     rawClaimType: "function",
   });
 });
@@ -265,8 +269,10 @@ test("cli e2e exposes the unified helperContext surface (help present, internals
     `
     console.log(JSON.stringify({
       helpType: typeof help,
-      helpResultType: typeof help("click"),
+      helpResultType: typeof help("page"),
       newTabType: typeof newTab,
+      pageType: typeof page,
+      oldClickType: typeof click,
       helperContextType: typeof helperContext,
       loadAgentHelpersType: typeof loadAgentHelpers
     }));
@@ -278,6 +284,8 @@ test("cli e2e exposes the unified helperContext surface (help present, internals
     helpType: "function",
     helpResultType: "string",
     newTabType: "undefined",
+    pageType: "object",
+    oldClickType: "undefined",
     helperContextType: "undefined",
     loadAgentHelpersType: "undefined",
   });
@@ -295,7 +303,7 @@ test("taskspace e2e rejects explicit use of a user-owned task space", async () =
   ]);
 
   await assert.rejects(
-    () => runTaskspaceScript(ego, `await switchTaskSpace("checkout-flow")`),
+    () => runTaskspaceScript(ego, `await taskSpaces.switch("checkout-flow")`),
     /switchTaskSpace requires an agent-owned task space/,
   );
   assert.deepEqual(ego.calls, [["listTaskSpaces"]]);
@@ -313,7 +321,7 @@ test("taskspace e2e rejects unknown task space ownership", async () => {
 
   await assert.rejects(
     () =>
-      runTaskspaceScript(ego, `await useOrCreateTaskSpace("checkout-flow")`),
+      runTaskspaceScript(ego, `await taskSpaces.useOrCreate("checkout-flow")`),
     /ownership "shared"/,
   );
   assert.deepEqual(ego.calls, [["listTaskSpaces"]]);
@@ -330,7 +338,7 @@ test("taskspace e2e surfaces newTaskSpace binding errors", async () => {
   ]);
 
   await assert.rejects(
-    () => runTaskspaceScript(ego, `await newTaskSpace("checkout-flow")`),
+    () => runTaskspaceScript(ego, `await taskSpaces.new("checkout-flow")`),
     /newTaskSpace: Task space already exists: checkout-flow/,
   );
   assert.deepEqual(ego.calls, [["createTaskSpace", "checkout-flow"]]);

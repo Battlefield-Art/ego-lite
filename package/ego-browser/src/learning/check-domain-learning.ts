@@ -60,6 +60,7 @@ export interface LearnedToolSignature {
   toolType: "node" | "browser";
   description: string;
   args: Record<string, ToolArgSchema>;
+  returns: { type: string; description: string } | null;
   example: string;
 }
 

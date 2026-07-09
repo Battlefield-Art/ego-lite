@@ -2,14 +2,14 @@
  * Shared case-construction helpers for E2E case files.
  *
  * caseBody / homeCase wrap a case body string with the common boilerplate
- * (useOrCreateTaskSpace + resetHome) so each case file only expresses its
+ * (taskSpaces.useOrCreate + resetHome) so each case file only expresses its
  * unique logic. buttonRefSetup returns a reusable snippet for snapshot-based
  * ref resolution.
  */
 
 export function caseBody(body) {
   return () => `
-    await useOrCreateTaskSpace(taskName);
+    await taskSpaces.useOrCreate(taskName);
     ${body}
   `;
 }
@@ -23,7 +23,7 @@ export function homeCase(body) {
 
 export function buttonRefSetup() {
   return `
-    const snap = await snapshotRaw({
+    const snap = await page.snapshotRaw({
       scope: "full_page",
       includeActionMarks: true,
       includeStableLocator: true,

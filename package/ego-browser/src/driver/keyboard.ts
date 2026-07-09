@@ -2,11 +2,22 @@ import { cdp } from "../cdp-eval.js";
 import { browserCdp } from "../browser-runtime.js";
 import { withHandle, resolveAndCall } from "./element-ops.js";
 import { waitForSelector } from "./waits.js";
+import { state } from "../state.js";
 
 type FillOptions = {
   clearFirst?: boolean;
   timeout?: number;
 };
+
+type PressSequentiallyOptions = {
+  delay?: number;
+  timeout?: number;
+};
+
+type SelectOption =
+  | string
+  | number
+  | { value?: string; label?: string; index?: number };
 
 const KEYS = {
   Enter: { vk: 13, key: "Enter", code: "Enter", text: "\r" },
@@ -23,6 +34,10 @@ const KEYS = {
   End: { vk: 35, key: "End", code: "End", text: "" },
   PageUp: { vk: 33, key: "PageUp", code: "PageUp", text: "" },
   PageDown: { vk: 34, key: "PageDown", code: "PageDown", text: "" },
+  Shift: { vk: 16, key: "Shift", code: "ShiftLeft", text: "" },
+  Control: { vk: 17, key: "Control", code: "ControlLeft", text: "" },
+  Alt: { vk: 18, key: "Alt", code: "AltLeft", text: "" },
+  Meta: { vk: 91, key: "Meta", code: "MetaLeft", text: "" },
 };
 
 const PRINTABLE_CODE_RE = /^[A-Za-z0-9]$/;
@@ -68,6 +83,19 @@ const MODIFIER_BITS: Record<string, number> = {
   Meta: 4,
   Shift: 8,
 };
+const MODIFIER_KEYS: Record<string, string> = {
+  Alt: "Alt",
+  Control: "Control",
+  ControlLeft: "Control",
+  ControlRight: "Control",
+  Meta: "Meta",
+  MetaLeft: "Meta",
+  MetaRight: "Meta",
+  Shift: "Shift",
+  ShiftLeft: "Shift",
+  ShiftRight: "Shift",
+};
+const pressedModifiers = new Set<string>();
 
 /**
  * Parse a Playwright-style key combo ("Control+a", "Shift+Tab") into a base key
@@ -101,6 +129,72 @@ function parseKeyCombo(combo: string) {
   return { key, modifiers };
 }
 
+function modifierName(key: string) {
+  return MODIFIER_KEYS[key];
+}
+
+function modifierBitForKey(key: string) {
+  const name = modifierName(key);
+  return name ? MODIFIER_BITS[name] : 0;
+}
+
+function activeModifierBits() {
+  let bits = 0;
+  for (const name of pressedModifiers) {
+    bits |= MODIFIER_BITS[name] || 0;
+  }
+  return bits;
+}
+
+function keyEventBase(key: string, modifiers: number) {
+  const { vk, code } = keyDefinition(key);
+  return {
+    key,
+    code,
+    modifiers,
+    windowsVirtualKeyCode: vk,
+    nativeVirtualKeyCode: vk,
+  };
+}
+
+/**
+ * Dispatch a keydown event and keep modifier keys active until keyboard.up().
+ * @param {string} keyCombo Key or modifier+key combo.
+ * @returns {Promise<void>}
+ */
+export async function down(keyCombo) {
+  const { key, modifiers } = parseKeyCombo(keyCombo);
+  const keyModifierBit = modifierBitForKey(key);
+  const eventModifiers = activeModifierBits() | modifiers | keyModifierBit;
+  await dispatchKeyEvent({
+    type: "keyDown",
+    ...keyEventBase(key, eventModifiers),
+  });
+  const name = modifierName(key);
+  if (name) {
+    pressedModifiers.add(name);
+  }
+}
+
+/**
+ * Dispatch a keyup event and release modifier keys.
+ * @param {string} keyCombo Key or modifier+key combo.
+ * @returns {Promise<void>}
+ */
+export async function up(keyCombo) {
+  const { key, modifiers } = parseKeyCombo(keyCombo);
+  const keyModifierBit = modifierBitForKey(key);
+  const eventModifiers = activeModifierBits() | modifiers | keyModifierBit;
+  await dispatchKeyEvent({
+    type: "keyUp",
+    ...keyEventBase(key, eventModifiers),
+  });
+  const name = modifierName(key);
+  if (name) {
+    pressedModifiers.delete(name);
+  }
+}
+
 /**
  * Dispatch a key press through CDP. Combine modifiers with "+".
  * @param {string} keyCombo Key or modifier+key combo: "Enter", "a", "Control+a", "Shift+Tab". Modifiers: Control, Shift, Alt, Meta, ControlOrMeta.
@@ -108,26 +202,33 @@ function parseKeyCombo(combo: string) {
  */
 export async function press(keyCombo) {
   const { key, modifiers } = parseKeyCombo(keyCombo);
+  const effectiveModifiers = activeModifierBits() | modifiers;
+  const downModifiers = effectiveModifiers | modifierBitForKey(key);
   const { vk, code, text } = keyDefinition(key);
   const base = {
     key,
     code,
-    modifiers,
+    modifiers: effectiveModifiers,
     windowsVirtualKeyCode: vk,
     nativeVirtualKeyCode: vk,
   };
-  const commands = editingCommandsForKey(key, modifiers);
+  const commands = editingCommandsForKey(key, effectiveModifiers);
   const probeId = await installKeyProbe(key);
   let dispatchError: unknown = null;
   try {
     await dispatchKeyEvent({
       type: "keyDown",
       ...base,
+      modifiers: downModifiers,
       ...(text ? { text, unmodifiedText: text } : {}),
       ...(commands ? { commands } : {}),
     });
     await inputEventDelay();
-    await dispatchKeyEvent({ type: "keyUp", ...base });
+    await dispatchKeyEvent({
+      type: "keyUp",
+      ...base,
+      modifiers: downModifiers,
+    });
   } catch (error) {
     if (!isKeyDispatchTimeout(error)) throw error;
     dispatchError = error;
@@ -151,6 +252,25 @@ export async function insertText(text) {
 }
 
 /**
+ * Type text with key events, Playwright-style keyboard.type().
+ * @param {string} text Text to type.
+ * @param {{delay?: number}} [options] delay in milliseconds between key presses.
+ * @returns {Promise<void>}
+ */
+export async function typeText(text, options: PressSequentiallyOptions = {}) {
+  await pressSequentially(String(text), options);
+}
+
+/**
+ * Focus an element.
+ * @param {string} selector CSS selector / @ref / loc= / xpath= for the element.
+ * @returns {Promise<void>}
+ */
+export async function focus(selector) {
+  await resolveAndCall(selector, "function(){this.focus();}");
+}
+
+/**
  * Focus an input, optionally clear it, write a value, and fire input/change events.
  * @param {string} selector CSS selector / @ref / loc= / xpath= for the input-like element.
  * @param {string} value Text to write.
@@ -159,13 +279,13 @@ export async function insertText(text) {
  */
 export async function fill(selector, value, options: FillOptions = {}) {
   const clearFirst = options.clearFirst ?? true;
-  const timeout = options.timeout ?? 0;
+  const timeout = options.timeout ?? state.defaultTimeout;
   if (timeout > 0 && !(await waitForSelector(selector, { timeout }))) {
     throw new Error(`fill: element not found: ${JSON.stringify(selector)}`);
   }
   await withHandle(selector, async ({ objectId, sessionId }) => {
     const focusSource = clearFirst
-      ? "function(){this.focus(); if(typeof this.select==='function') this.select();}"
+      ? "function(){this.focus(); if(this.isContentEditable){const range=document.createRange();range.selectNodeContents(this);const sel=getSelection();sel.removeAllRanges();sel.addRange(range);}else if(typeof this.select==='function') this.select();}"
       : "function(){this.focus();}";
     await cdp(
       "Runtime.callFunctionOn",
@@ -182,7 +302,7 @@ export async function fill(selector, value, options: FillOptions = {}) {
         "Runtime.callFunctionOn",
         {
           functionDeclaration:
-            "function(){this.value=''; this.dispatchEvent(new Event('input',{bubbles:true}));}",
+            "function(){if(this.isContentEditable){this.textContent='';}else if('value' in this){this.value='';}else{throw new Error('fill target is not editable');} this.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward'}));}",
           objectId,
           returnByValue: true,
           awaitPromise: false,
@@ -203,6 +323,149 @@ export async function fill(selector, value, options: FillOptions = {}) {
       sessionId,
     );
   });
+}
+
+/**
+ * Press a sequence of characters, optionally focusing a target first.
+ * @param {string} selectorOrText Selector when text is provided, otherwise text for the current focus.
+ * @param {string|{delay?: number, timeout?: number}} [textOrOptions] Text to type, or options when typing into current focus.
+ * @param {{delay?: number, timeout?: number}} [options] delay in milliseconds between key presses.
+ * @returns {Promise<void>}
+ */
+export async function pressSequentially(
+  selectorOrText,
+  textOrOptions: string | PressSequentiallyOptions | undefined = undefined,
+  options: PressSequentiallyOptions = {},
+) {
+  let text;
+  let effectiveOptions;
+  if (typeof textOrOptions === "string") {
+    await focusWithTimeout(selectorOrText, options.timeout);
+    text = textOrOptions;
+    effectiveOptions = options;
+  } else {
+    text = selectorOrText;
+    effectiveOptions = textOrOptions || {};
+  }
+  for (const char of String(text)) {
+    await press(char);
+    const delay = Number(effectiveOptions.delay ?? 0);
+    if (delay > 0) {
+      await state.sleep(delay);
+    }
+  }
+}
+
+/**
+ * Focus an element and press a key combo, Playwright-style locator.press().
+ * @param {string} selector CSS selector / @ref / loc= / xpath= for the element.
+ * @param {string} keyCombo Key or modifier+key combo.
+ * @param {{timeout?: number}} [options] timeout in milliseconds.
+ * @returns {Promise<void>}
+ */
+export async function pressOnSelector(
+  selector,
+  keyCombo,
+  options: { timeout?: number } = {},
+) {
+  await focusWithTimeout(selector, options.timeout);
+  await press(keyCombo);
+}
+
+/**
+ * Set a checkbox or radio to checked.
+ * @param {string} selector CSS selector / @ref / loc= / xpath= for the input.
+ * @returns {Promise<void>}
+ */
+export async function check(selector) {
+  await setChecked(selector, true);
+}
+
+/**
+ * Set a checkbox to unchecked.
+ * @param {string} selector CSS selector / @ref / loc= / xpath= for the checkbox.
+ * @returns {Promise<void>}
+ */
+export async function uncheck(selector) {
+  await setChecked(selector, false);
+}
+
+/**
+ * Set the checked state of a checkbox or radio, Playwright-style.
+ * @param {string} selector CSS selector / @ref / loc= / xpath= for the input.
+ * @param {boolean} checked Desired checked state.
+ * @returns {Promise<void>}
+ */
+export async function setChecked(selector, checked) {
+  await resolveAndCall(
+    selector,
+    `function(checked){
+      if (!(this instanceof HTMLInputElement) || (this.type !== "checkbox" && this.type !== "radio")) {
+        throw new Error("setChecked target must be a checkbox or radio input");
+      }
+      if (this.type === "radio" && !checked) {
+        throw new Error("setChecked cannot uncheck a radio input");
+      }
+      if (this.checked === checked) return;
+      this.checked = checked;
+      this.dispatchEvent(new Event("input", { bubbles: true }));
+      this.dispatchEvent(new Event("change", { bubbles: true }));
+    }`,
+    [Boolean(checked)],
+  );
+}
+
+/**
+ * Select one or more options in a <select>.
+ * @param {string} selector CSS selector / @ref / loc= / xpath= for the select.
+ * @param {string|number|object|Array<string|number|object>} values Option value(s), labels, or indexes.
+ * @returns {Promise<string[]>} Selected option values.
+ */
+export async function selectOption(
+  selector,
+  values: SelectOption | SelectOption[],
+) {
+  const { result } = await resolveAndCall(
+    selector,
+    `function(values){
+      if (!(this instanceof HTMLSelectElement)) {
+        throw new Error("selectOption target must be a select element");
+      }
+      const wanted = Array.isArray(values) ? values : [values];
+      const selected = [];
+      for (const option of this.options) option.selected = false;
+      for (const wantedOption of wanted) {
+        let match;
+        if (typeof wantedOption === "object" && wantedOption !== null) {
+          if (typeof wantedOption.index === "number") match = this.options[wantedOption.index];
+          if (!match && wantedOption.value !== undefined) {
+            match = [...this.options].find((option) => option.value === String(wantedOption.value));
+          }
+          if (!match && wantedOption.label !== undefined) {
+            match = [...this.options].find((option) => option.label === String(wantedOption.label) || option.text === String(wantedOption.label));
+          }
+        } else {
+          match = [...this.options].find((option) => option.value === String(wantedOption));
+        }
+        if (!match) throw new Error("selectOption could not find option " + JSON.stringify(wantedOption));
+        match.selected = true;
+        selected.push(match.value);
+        if (!this.multiple) break;
+      }
+      this.dispatchEvent(new Event("input", { bubbles: true }));
+      this.dispatchEvent(new Event("change", { bubbles: true }));
+      return selected;
+    }`,
+    [values],
+  );
+  return result.result?.value || [];
+}
+
+async function focusWithTimeout(selector, timeout = state.defaultTimeout) {
+  if (timeout > 0 && !(await waitForSelector(selector, { timeout }))) {
+    throw new Error(`focus: element not found: ${JSON.stringify(selector)}`);
+  }
+  await focus(selector);
 }
 
 // Page-side dispatcher, mirroring Playwright's injected dispatchEvent: the type

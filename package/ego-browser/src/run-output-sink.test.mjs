@@ -92,7 +92,7 @@ test("a swallowed user-control hard stop discards all output and prints the guid
       for (const site of ["a", "b", "c"]) {
         console.log("visiting " + site);
         try {
-          await listTaskSpaces();
+          await taskSpaces.list();
           console.log("ok " + site);
         } catch (e) {
           console.log("failed " + site + ": " + e.message);
@@ -106,10 +106,10 @@ test("a swallowed user-control hard stop discards all output and prints the guid
   assert.equal(result.exitCode, 0);
   // Only the owned guidance survives — none of the script's own logging.
   assert.match(result.stdout, /taken control of this task space/);
-  assert.match(result.stdout, /takeOverTaskSpace\(\)/);
+  assert.match(result.stdout, /taskSpaces\.takeOver\(\)/);
   assert.doesNotMatch(result.stdout, /visiting|failed|ok |summary/);
   // Printed exactly once, even though every loop iteration re-reported the hard stop.
-  assert.equal(result.stdout.match(/takeOverTaskSpace\(\)/g).length, 1);
+  assert.equal(result.stdout.match(/taskSpaces\.takeOver\(\)/g).length, 1);
   assert.ok(ego.calls >= 3, "every iteration should have hit the hard stop");
 });
 
@@ -118,7 +118,7 @@ test("an inactive / unassigned task space is also a hard stop", async () => {
   const result = await runScript(
     `
       try {
-        await listTaskSpaces();
+        await taskSpaces.list();
       } catch (e) {
         console.log("swallowed: " + e.message);
       }
@@ -129,7 +129,7 @@ test("an inactive / unassigned task space is also a hard stop", async () => {
 
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /no longer assigned to the agent/);
-  assert.match(result.stdout, /claimTaskSpace\(id\)/);
+  assert.match(result.stdout, /taskSpaces\.claim\(id\)/);
   assert.doesNotMatch(result.stdout, /swallowed|business/);
 });
 
@@ -142,7 +142,7 @@ test("a swallowed snapshot hard stop (rejected, not resolved) also collapses to 
       for (const site of ["a", "b", "c"]) {
         console.log("visiting " + site);
         try {
-          await snapshot();
+          await page.snapshot();
           console.log("ok " + site);
         } catch (e) {
           console.log("failed " + site + ": " + e.message);
@@ -156,10 +156,10 @@ test("a swallowed snapshot hard stop (rejected, not resolved) also collapses to 
   assert.equal(result.exitCode, 0);
   // The owned guidance survives once; the native wording and business logs are dropped.
   assert.match(result.stdout, /taken control of this task space/);
-  assert.match(result.stdout, /takeOverTaskSpace\(\)/);
+  assert.match(result.stdout, /taskSpaces\.takeOver\(\)/);
   assert.doesNotMatch(result.stdout, /native wording/);
   assert.doesNotMatch(result.stdout, /visiting|failed|ok |summary/);
-  assert.equal(result.stdout.match(/takeOverTaskSpace\(\)/g).length, 1);
+  assert.equal(result.stdout.match(/taskSpaces\.takeOver\(\)/g).length, 1);
   assert.ok(
     ego.calls >= 3,
     "every iteration should have hit the snapshot hard stop",
@@ -171,7 +171,7 @@ test("an uncaught hard stop discards output without double-printing the message"
   const result = await runScript(
     `
       console.log("before");
-      await listTaskSpaces();
+      await taskSpaces.list();
       console.log("after");
     `,
     ego,

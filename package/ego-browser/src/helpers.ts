@@ -8,10 +8,12 @@ import { help as helpRuntime, formatHelp } from "./help-runtime.js";
 import { cdp, decodeUnserializableJsValue, evaluate } from "./cdp-eval.js";
 import * as pointer from "./driver/pointer.js";
 import * as keyboard from "./driver/keyboard.js";
+import * as locator from "./driver/locator.js";
 import * as nav from "./driver/nav.js";
 import * as observe from "./driver/observe.js";
 import * as waits from "./driver/waits.js";
 import * as files from "./driver/files.js";
+import * as downloads from "./driver/downloads.js";
 import { browserFetch, serverFetch } from "./http.js";
 import {
   loadBrowserToolSource,
@@ -31,7 +33,40 @@ export {
   wheel,
   scrollIntoViewIfNeeded,
 } from "./driver/pointer.js";
-export { press, insertText, fill, dispatchEvent } from "./driver/keyboard.js";
+export {
+  press,
+  down,
+  up,
+  insertText,
+  focus,
+  fill,
+  pressSequentially,
+  check,
+  uncheck,
+  setChecked,
+  selectOption,
+  dispatchEvent,
+} from "./driver/keyboard.js";
+export {
+  textContent,
+  innerText,
+  inputValue,
+  isChecked,
+  isVisible,
+  isHidden,
+  isEnabled,
+  isDisabled,
+  isEditable,
+  getAttribute,
+  blur,
+  boundingBox,
+  count,
+  allInnerTexts,
+  allTextContents,
+  innerHTML,
+  evaluateLocator,
+  evaluateAll,
+} from "./driver/locator.js";
 export {
   INTERNAL_URL_PREFIXES,
   pageInfo,
@@ -55,6 +90,10 @@ export {
   waitForTimeout,
   waitForLoadState,
   waitForSelector,
+  waitForFunction,
+  waitForURL,
+  waitForRequest,
+  waitForResponse,
 } from "./driver/waits.js";
 export { setInputFiles } from "./driver/files.js";
 export { browserFetch, serverFetch } from "./http.js";
@@ -476,38 +515,326 @@ export async function learnContext(url = undefined) {
   });
 }
 
-export function helperContext(extra: any = {}) {
-  const { newTab: _newTab, ...publicNav } = nav;
-  const all = {
-    ...pointer,
-    ...keyboard,
-    ...publicNav,
-    ...observe,
-    ...waits,
-    ...files,
-    cdp,
+function createLocator(selector) {
+  return {
+    selector,
+    first: () => createLocator(nthSelector(selector, 0)),
+    last: () => createLocator(`internal:last;${selector}`),
+    nth: (index) => {
+      const value = Number(index);
+      if (!Number.isInteger(value) || value < 0) {
+        throw new Error("locator.nth requires a non-negative integer");
+      }
+      return createLocator(nthSelector(selector, value));
+    },
+    locator: (child) =>
+      createLocator(scopedSelector(selector, locatorSelector(child))),
+    getByRole: (role, options: any = {}) =>
+      createLocator(scopedSelector(selector, roleSelector(role, options))),
+    getByText: (text, options: any = {}) =>
+      createLocator(
+        scopedSelector(selector, textSelector("text", text, options)),
+      ),
+    getByLabel: (text, options: any = {}) =>
+      createLocator(
+        scopedSelector(selector, textSelector("label", text, options)),
+      ),
+    getByPlaceholder: (text, options: any = {}) =>
+      createLocator(
+        scopedSelector(selector, textSelector("placeholder", text, options)),
+      ),
+    getByAltText: (text, options: any = {}) =>
+      createLocator(
+        scopedSelector(selector, textSelector("alt", text, options)),
+      ),
+    getByTitle: (text, options: any = {}) =>
+      createLocator(
+        scopedSelector(selector, textSelector("title", text, options)),
+      ),
+    getByTestId: (testId) =>
+      createLocator(scopedSelector(selector, testIdSelector(testId))),
+    filter: (options: any = {}) =>
+      createLocator(filterSelector(selector, options)),
+    click: (options = {}) => pointer.click(selector, options),
+    dblclick: (options = {}) => pointer.dblclick(selector, options),
+    hover: (options = {}) => pointer.hover(selector, options),
+    dragTo: (target, options = {}) =>
+      pointer.drag([selector, target?.selector || target], options),
+    scrollIntoViewIfNeeded: () => pointer.scrollIntoViewIfNeeded(selector),
+    focus: () => keyboard.focus(selector),
+    fill: (value, options = {}) => keyboard.fill(selector, value, options),
+    clear: (options = {}) => keyboard.fill(selector, "", options),
+    press: (key, options = {}) =>
+      keyboard.pressOnSelector(selector, key, options),
+    pressSequentially: (text, options = {}) =>
+      keyboard.pressSequentially(selector, text, options),
+    check: () => keyboard.check(selector),
+    uncheck: () => keyboard.uncheck(selector),
+    setChecked: (checked) => keyboard.setChecked(selector, checked),
+    selectOption: (values) => keyboard.selectOption(selector, values),
+    setInputFiles: (filesValue) => files.setInputFiles(selector, filesValue),
+    dispatchEvent: (type, eventInit = {}) =>
+      keyboard.dispatchEvent(selector, type, eventInit),
+    blur: () => locator.blur(selector),
+    textContent: () => locator.textContent(selector),
+    innerText: () => locator.innerText(selector),
+    innerHTML: () => locator.innerHTML(selector),
+    inputValue: () => locator.inputValue(selector),
+    isChecked: () => locator.isChecked(selector),
+    isVisible: () => locator.isVisible(selector),
+    isHidden: () => locator.isHidden(selector),
+    isEnabled: () => locator.isEnabled(selector),
+    isDisabled: () => locator.isDisabled(selector),
+    isEditable: () => locator.isEditable(selector),
+    getAttribute: (name) => locator.getAttribute(selector, name),
+    boundingBox: () => locator.boundingBox(selector),
+    screenshot: async (options = {}) => {
+      const box = await locator.boundingBox(selector);
+      if (!box) {
+        throw new Error(
+          `locator.screenshot target has no bounding box: ${selector}`,
+        );
+      }
+      return observe.screenshot({ ...options, clip: box });
+    },
+    count: () => locator.count(selector),
+    allInnerTexts: () => locator.allInnerTexts(selector),
+    allTextContents: () => locator.allTextContents(selector),
+    evaluate: (pageFunction, arg = undefined) =>
+      locator.evaluateLocator(selector, pageFunction, arg),
+    evaluateAll: (pageFunction, arg = undefined) =>
+      locator.evaluateAll(selector, pageFunction, arg),
+    waitFor: (options = {}) => waits.waitForSelector(selector, options),
+  };
+}
+
+function nthSelector(selector, index) {
+  return `internal:nth=${index};${selector}`;
+}
+
+function internalSelector(kind, data) {
+  return `internal:${kind}:${encodeURIComponent(JSON.stringify(data))}`;
+}
+
+function scopedSelector(base, child) {
+  return internalSelector("scope", { base, child });
+}
+
+function locatorSelector(value) {
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof value.selector === "string"
+  ) {
+    return value.selector;
+  }
+  return String(value);
+}
+
+function textSelector(prefix, text, options: any = {}) {
+  const value = `${options.exact ? "exact:" : ""}${JSON.stringify(String(text))}`;
+  return `loc=${prefix}:${value}`;
+}
+
+function roleSelector(role, options: any = {}) {
+  const name =
+    options && Object.prototype.hasOwnProperty.call(options, "name")
+      ? `[name=${JSON.stringify(roleNameMatcher(options.name))}]`
+      : "";
+  return `loc=role:${role}${name}`;
+}
+
+function testIdSelector(testId) {
+  return textSelector("testid", testId, { exact: true });
+}
+
+function filterSelector(base, options: any = {}) {
+  const data: any = { base };
+  if (Object.prototype.hasOwnProperty.call(options, "hasText")) {
+    data.hasText = textMatcher(options.hasText);
+  }
+  if (Object.prototype.hasOwnProperty.call(options, "hasNotText")) {
+    data.hasNotText = textMatcher(options.hasNotText);
+  }
+  if (options.has !== undefined) {
+    data.has = locatorSelector(options.has);
+  }
+  if (options.hasNot !== undefined) {
+    data.hasNot = locatorSelector(options.hasNot);
+  }
+  return internalSelector("filter", data);
+}
+
+function textMatcher(value) {
+  if (value instanceof RegExp) {
+    return { regex: value.source, flags: value.flags };
+  }
+  return { text: String(value), exact: false };
+}
+
+function roleNameMatcher(value) {
+  if (value instanceof RegExp) {
+    return { regex: value.source, flags: value.flags };
+  }
+  return value;
+}
+
+function createPageFacade() {
+  return {
+    setDefaultTimeout: (timeout) => {
+      const value = Number(timeout);
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error(
+          "page.setDefaultTimeout requires a non-negative number",
+        );
+      }
+      state.defaultTimeout = value;
+    },
+    goto: nav.goto,
+    reload: async (options: any = {}) => {
+      await cdp("Page.reload", { ignoreCache: Boolean(options.ignoreCache) });
+      if (options.waitUntil === "commit") {
+        return false;
+      }
+      return waits.waitForLoadState(options.waitUntil || "load", {
+        timeout: options.timeout,
+      });
+    },
+    info: nav.pageInfo,
+    url: async () => (await nav.pageInfo()).url,
+    title: async () => (await nav.pageInfo()).title,
+    locator: createLocator,
+    getByRole: (role, options: any = {}) => {
+      return createLocator(roleSelector(role, options));
+    },
+    getByText: (text, options: any = {}) =>
+      createLocator(textSelector("text", text, options)),
+    getByLabel: (text, options: any = {}) =>
+      createLocator(textSelector("label", text, options)),
+    getByPlaceholder: (text, options: any = {}) =>
+      createLocator(textSelector("placeholder", text, options)),
+    getByAltText: (text, options: any = {}) =>
+      createLocator(textSelector("alt", text, options)),
+    getByTitle: (text, options: any = {}) =>
+      createLocator(textSelector("title", text, options)),
+    getByTestId: (testId) => createLocator(testIdSelector(testId)),
+    waitForTimeout: waits.waitForTimeout,
+    waitForLoadState: waits.waitForLoadState,
+    waitForSelector: waits.waitForSelector,
+    waitForFunction: waits.waitForFunction,
+    waitForURL: waits.waitForURL,
+    waitForRequest: waits.waitForRequest,
+    waitForResponse: waits.waitForResponse,
+    waitForEvent: downloads.waitForEvent,
     evaluate,
-    serverFetch,
-    browserFetch,
-    siteSkills,
-    siteSkillsForUrl,
-    runSiteTool,
-    runSiteBrowserTool,
-    learnContext,
-    listTaskSpaces,
-    switchTaskSpace,
-    newTaskSpace,
-    useOrCreateTaskSpace,
-    claimTaskSpace,
-    completeTaskSpace,
-    handOffTaskSpace,
-    takeOverTaskSpace,
+    screenshot: observe.screenshot,
+    snapshot: observe.snapshot,
+    snapshotRaw: observe.snapshotRaw,
+    elementCenter: observe.elementCenter,
+    drainEvents: observe.drainEvents,
+    keyboard: {
+      press: keyboard.press,
+      down: keyboard.down,
+      up: keyboard.up,
+      insertText: keyboard.insertText,
+      type: keyboard.typeText,
+    },
+    mouse: {
+      click: (x, y, options = {}) => {
+        const [target, effectiveOptions] = mousePointArgs(x, y, options);
+        return pointer.click(target, effectiveOptions);
+      },
+      dblclick: (x, y, options = {}) => {
+        const [target, effectiveOptions] = mousePointArgs(x, y, options);
+        return pointer.dblclick(target, effectiveOptions);
+      },
+      move: (x, y) => pointer.hover([x, y]),
+      down: pointer.down,
+      up: pointer.up,
+      wheel: pointer.wheel,
+      drag: pointer.drag,
+    },
+  };
+}
+
+function mousePointArgs(x, y, options) {
+  if (Array.isArray(x) || (x && typeof x === "object")) {
+    return [x, y || {}];
+  }
+  return [[x, y], options || {}];
+}
+
+function createBrowserFacade() {
+  return {
+    listTabs: nav.listTabs,
+    currentTab: nav.currentTab,
+    switchTab: nav.switchTab,
+    openOrReuseTab: nav.openOrReuseTab,
+    closeTab: nav.closeTab,
+    ensureRealTab: nav.ensureRealTab,
+    iframeTarget: nav.iframeTarget,
+  };
+}
+
+function createTaskSpacesFacade() {
+  return {
+    list: listTaskSpaces,
+    switch: switchTaskSpace,
+    new: newTaskSpace,
+    useOrCreate: useOrCreateTaskSpace,
+    claim: claimTaskSpace,
+    complete: completeTaskSpace,
+    handOff: handOffTaskSpace,
+    takeOver: takeOverTaskSpace,
     waitForAgentControl,
+  };
+}
+
+function createSiteFacade() {
+  return {
+    skills: siteSkills,
+    skillsForUrl: siteSkillsForUrl,
+    runTool: runSiteTool,
+    runBrowserTool: runSiteBrowserTool,
+    learnContext,
+  };
+}
+
+const FACADE_HELP: Record<string, string> = {
+  page: 'page: Playwright-style page facade. Use page.goto(url), page.locator(selector), page.getByText(text), page.getByLabel(text), page.getByPlaceholder(text), page.getByTestId(testId), page.setDefaultTimeout(ms), page.waitForEvent("download"), page.waitForLoadState(state, options), page.waitForURL(url, options), page.waitForRequest(urlOrPredicate, options), page.waitForResponse(urlOrPredicate, options), page.evaluate(expression), page.screenshot(options), page.keyboard.press(key), page.keyboard.type(text), and page.mouse.click(x, y).',
+  locator:
+    "page.locator(selector): returns a locator facade with locator(), getByRole(), getByText(), filter(), first(), nth(index), last(), click(), fill(value), clear(), press(key), check(), selectOption(value), textContent(), innerText(), innerHTML(), isVisible(), isEnabled(), getAttribute(name), screenshot(), count(), evaluate(fn, arg), evaluateAll(fn, arg), and waitFor(options).",
+  browser:
+    "browser: tab facade. Use browser.listTabs(), browser.currentTab(), browser.switchTab(target), browser.openOrReuseTab(url, options), and browser.closeTab(target).",
+  taskSpaces:
+    "taskSpaces: task-space facade. Use taskSpaces.useOrCreate(nameOrId), taskSpaces.claim(nameOrId), taskSpaces.switch(nameOrId), taskSpaces.complete(nameOrId, options), taskSpaces.handOff(nameOrId), taskSpaces.takeOver(nameOrId), and taskSpaces.waitForAgentControl(nameOrId, options).",
+  site: "site: learned site-skill facade. Use site.skills(url), site.skillsForUrl(url), site.runTool(siteId, toolName, args), site.runBrowserTool(siteId, toolName, args), and site.learnContext(url).",
+  fetch:
+    "fetch: network facade. Use fetch.server(url, options) for Node-side fetch and fetch.browser(url, options) for browser-origin fetch.",
+};
+
+export function helperContext(extra: any = {}) {
+  const all = {
+    page: createPageFacade(),
+    browser: createBrowserFacade(),
+    taskSpaces: createTaskSpacesFacade(),
+    site: createSiteFacade(),
+    fetch: {
+      server: serverFetch,
+      browser: browserFetch,
+    },
+    cdp,
     ...extra,
   };
   return {
     ...all,
     help: (...names: string[]) => {
+      if (names.length === 1 && FACADE_HELP[names[0]]) {
+        return FACADE_HELP[names[0]];
+      }
+      if (names.length === 0) {
+        return Object.values(FACADE_HELP).join("\n\n");
+      }
       const result = helpRuntime(all, ...names);
       if (typeof result === "string") return result;
       if (Array.isArray(result)) return result.map(formatHelp).join("\n\n");

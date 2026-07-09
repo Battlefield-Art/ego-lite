@@ -129,16 +129,16 @@ async function waitForJsValue(
   const deadline = Date.now() + 2000;
   let last;
   while (Date.now() <= deadline) {
-    last = await evaluate(expression);
+    last = await page.evaluate(expression);
     if (last === expected) {
       logAssertion("pass", message);
       return last;
     }
-    await waitForTimeout(50);
+    await page.waitForTimeout(50);
   }
   let detail = "";
   if (debugExpression) {
-    detail = "; debug=" + JSON.stringify(await evaluate(debugExpression));
+    detail = "; debug=" + JSON.stringify(await page.evaluate(debugExpression));
   }
   logAssertion("fail", message, {
     expected: formatAssertionValue(expected),
@@ -160,16 +160,16 @@ async function waitForJsCondition(expression, message, debugExpression = null) {
   const deadline = Date.now() + 2000;
   let last;
   while (Date.now() <= deadline) {
-    last = await evaluate(expression);
+    last = await page.evaluate(expression);
     if (last) {
       logAssertion("pass", message);
       return last;
     }
-    await waitForTimeout(50);
+    await page.waitForTimeout(50);
   }
   let detail = "";
   if (debugExpression) {
-    detail = "; debug=" + JSON.stringify(await evaluate(debugExpression));
+    detail = "; debug=" + JSON.stringify(await page.evaluate(debugExpression));
   }
   logAssertion("fail", message, {
     actual: formatAssertionValue(last),
@@ -209,47 +209,57 @@ async function setStableViewport() {
     deviceScaleFactor: 1,
     mobile: false,
   }).catch(() => {});
-  await waitForTimeout(100);
+  await page.waitForTimeout(100);
 }
 
 async function hitTestClickButton() {
-  return evaluate(
-    "const el = document.querySelector('#click-button');" +
-      "if (!el) return '';" +
-      "const r = el.getBoundingClientRect();" +
-      "const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);" +
-      "return hit?.closest?.('#click-button')?.id || hit?.id || '';",
-  ).catch(() => "");
+  return page
+    .evaluate(
+      "const el = document.querySelector('#click-button');" +
+        "if (!el) return '';" +
+        "const r = el.getBoundingClientRect();" +
+        "const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);" +
+        "return hit?.closest?.('#click-button')?.id || hit?.id || '';",
+    )
+    .catch(() => "");
 }
 
 async function closeFixtureTabs() {
-  const tabs = await listTabs({ includeChrome: false }).catch(() => []);
+  const tabs = await browser.listTabs({ includeChrome: false }).catch(() => []);
   for (const tab of tabs) {
     if (String(tab.url || "").startsWith(baseUrl)) {
-      await closeTab(tab.targetId).catch(() => {});
+      await browser.closeTab(tab.targetId).catch(() => {});
     }
   }
 }
 
 async function resetHome() {
-  await takeOverTaskSpace(taskName).catch(() => {});
-  await waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
-  await closeFixtureTabs();
-  const tab = await openOrReuseTab(baseUrl + "/?e2e-reset=" + Date.now(), {
-    wait: true,
-    timeout: 10000,
+  await taskSpaces.takeOver(taskName).catch(() => {});
+  await taskSpaces.waitForAgentControl(taskName, {
+    interval: 0.1,
+    timeout: 5,
   });
-  await switchTab(tab.targetId);
+  await closeFixtureTabs();
+  const tab = await browser.openOrReuseTab(
+    baseUrl + "/?e2e-reset=" + Date.now(),
+    {
+      wait: true,
+      timeout: 10000,
+    },
+  );
+  await browser.switchTab(tab.targetId);
   await setStableViewport();
-  const nav = await goto(baseUrl + "/", { timeout: 10000 });
+  const nav = await page.goto(baseUrl + "/", { timeout: 10000 });
   assert(nav.loaded, "home page loaded");
   await setStableViewport();
   assert(
-    await waitForSelector("#click-button", { timeout: 3000, state: "visible" }),
+    await page
+      .locator("#click-button")
+      .waitFor({ timeout: 3000, state: "visible" }),
     "home fixture click button is visible",
   );
   for (let i = 0; i < 10; i += 1) {
-    const info = await pageInfo();
+    const info = await page.info();
     if (
       info.w > 0 &&
       info.h > 0 &&
@@ -258,7 +268,7 @@ async function resetHome() {
       return tab;
     await setStableViewport();
   }
-  const info = await pageInfo();
+  const info = await page.info();
   assert(info.w > 0 && info.h > 0, "viewport initialized with non-zero size");
   assertEqual(
     await hitTestClickButton(),

@@ -1,106 +1,106 @@
 export function taskSpaceCase() {
   return `
-    const task = await useOrCreateTaskSpace(taskName);
-    assertEqual(task.name, taskName, "useOrCreateTaskSpace selects named task");
+    const task = await taskSpaces.useOrCreate(taskName);
+    assertEqual(task.name, taskName, "taskSpaces.useOrCreate selects named task");
 
-    const reusedTask = await useOrCreateTaskSpace(taskName);
-    assertEqual(reusedTask.id, task.id, "useOrCreateTaskSpace reuses an existing named task");
+    const reusedTask = await taskSpaces.useOrCreate(taskName);
+    assertEqual(reusedTask.id, task.id, "taskSpaces.useOrCreate reuses an existing named task");
 
-    const spaces = await listTaskSpaces();
-    assert(spaces.some((space) => space.name === taskName), "listTaskSpaces includes e2e task");
+    const spaces = await taskSpaces.list();
+    assert(spaces.some((space) => space.name === taskName), "taskSpaces.list includes e2e task");
     const listed = spaces.find((space) => space.name === taskName);
-    assertEqual(typeof listed.id, "number", "listTaskSpaces returns numeric ids");
-    assertEqual(listed.taskId !== undefined, true, "listTaskSpaces returns taskId");
-    assertEqual(typeof listed.ownership, "string", "listTaskSpaces returns ownership");
+    assertEqual(typeof listed.id, "number", "taskSpaces.list returns numeric ids");
+    assertEqual(listed.taskId !== undefined, true, "taskSpaces.list returns taskId");
+    assertEqual(typeof listed.ownership, "string", "taskSpaces.list returns ownership");
 
-    const switched = await switchTaskSpace(task.id);
-    assertEqual(switched.id, task.id, "switchTaskSpace selects by numeric id");
-    const switchedByName = await switchTaskSpace(taskName);
-    assertEqual(switchedByName.id, task.id, "switchTaskSpace selects by name");
-    const switchedByNumericString = await switchTaskSpace(String(task.id));
-    assertEqual(switchedByNumericString.id, task.id, "switchTaskSpace selects by numeric string id");
+    const switched = await taskSpaces.switch(task.id);
+    assertEqual(switched.id, task.id, "taskSpaces.switch selects by numeric id");
+    const switchedByName = await taskSpaces.switch(taskName);
+    assertEqual(switchedByName.id, task.id, "taskSpaces.switch selects by name");
+    const switchedByNumericString = await taskSpaces.switch(String(task.id));
+    assertEqual(switchedByNumericString.id, task.id, "taskSpaces.switch selects by numeric string id");
 
-    await waitForAgentControl(taskName, { interval: 0.1, timeout: 3 });
-    await takeOverTaskSpace(taskName);
-    await waitForAgentControl(taskName, { interval: 0.1, timeout: 3 });
+    await taskSpaces.waitForAgentControl(taskName, { interval: 0.1, timeout: 3 });
+    await taskSpaces.takeOver(taskName);
+    await taskSpaces.waitForAgentControl(taskName, { interval: 0.1, timeout: 3 });
 
-    const scratch = await newTaskSpace(taskName + " scratch");
-    assertEqual(scratch.name, taskName + " scratch", "newTaskSpace creates a scratch space");
-    const scratchByName = await switchTaskSpace(scratch.name);
-    assertEqual(scratchByName.id, scratch.id, "newTaskSpace output can be selected by name");
-    const closed = await completeTaskSpace(scratch.id, { keep: false });
-    assertEqual(closed.done, true, "completeTaskSpace closes scratch task");
+    const scratch = await taskSpaces.new(taskName + " scratch");
+    assertEqual(scratch.name, taskName + " scratch", "taskSpaces.new creates a scratch space");
+    const scratchByName = await taskSpaces.switch(scratch.name);
+    assertEqual(scratchByName.id, scratch.id, "taskSpaces.new output can be selected by name");
+    const closed = await taskSpaces.complete(scratch.id, { keep: false });
+    assertEqual(closed.done, true, "taskSpaces.complete closes scratch task");
 
     await assertRejects(
-      () => completeTaskSpace(scratch.id, { keep: false }),
+      () => taskSpaces.complete(scratch.id, { keep: false }),
       "task space not found",
-      "completeTaskSpace reports already-closed task space"
+      "taskSpaces.complete reports already-closed task space"
     );
 
-    await switchTaskSpace(taskName);
+    await taskSpaces.switch(taskName);
     await assertRejects(
-      () => switchTaskSpace(taskName + " missing"),
+      () => taskSpaces.switch(taskName + " missing"),
       "task space not found",
-      "switchTaskSpace reports missing task space"
+      "taskSpaces.switch reports missing task space"
     );
     await assertRejects(
-      () => useOrCreateTaskSpace(99999999),
+      () => taskSpaces.useOrCreate(99999999),
       "task space not found",
-      "useOrCreateTaskSpace rejects missing numeric id"
+      "taskSpaces.useOrCreate rejects missing numeric id"
     );
     await assertRejects(
-      () => completeTaskSpace(taskName, {}),
+      () => taskSpaces.complete(taskName, {}),
       "requires { keep: boolean }",
-      "completeTaskSpace validates keep option"
+      "taskSpaces.complete validates keep option"
     );
     await assertRejects(
-      () => completeTaskSpace("", { keep: false }),
+      () => taskSpaces.complete("", { keep: false }),
       "requires a task space name or id",
-      "completeTaskSpace validates empty task id"
+      "taskSpaces.complete validates empty task id"
     );
     await assertRejects(
-      () => waitForAgentControl("", { timeout: 0.1 }),
+      () => taskSpaces.waitForAgentControl("", { timeout: 0.1 }),
       "requires a task space name or id",
-      "waitForAgentControl validates task space id"
+      "taskSpaces.waitForAgentControl validates task space id"
     );
     await assertRejects(
-      () => takeOverTaskSpace(taskName + " missing"),
+      () => taskSpaces.takeOver(taskName + " missing"),
       "task space not found",
-      "takeOverTaskSpace reports missing task space"
+      "taskSpaces.takeOver reports missing task space"
     );
     await assertRejects(
-      () => claimTaskSpace(taskName + " missing"),
+      () => taskSpaces.claim(taskName + " missing"),
       "task space not found",
-      "claimTaskSpace reports missing task space"
+      "taskSpaces.claim reports missing task space"
     );
     await assertRejects(
-      () => handOffTaskSpace(taskName + " missing"),
+      () => taskSpaces.handOff(taskName + " missing"),
       "task space not found",
-      "handOffTaskSpace reports missing task space"
+      "taskSpaces.handOff reports missing task space"
     );
 
-    // handOff → takeOver cycle: verify ownership transitions via listTaskSpaces
-    await handOffTaskSpace();
-    const afterHandoff = await listTaskSpaces();
+    // taskSpaces.handOff -> taskSpaces.takeOver cycle: verify ownership transitions via taskSpaces.list
+    await taskSpaces.handOff();
+    const afterHandoff = await taskSpaces.list();
     const handedOff = afterHandoff.find((s) => s.name === taskName);
-    assert(handedOff.ownership !== "agent", "handOffTaskSpace transfers ownership away from agent");
+    assert(handedOff.ownership !== "agent", "taskSpaces.handOff transfers ownership away from agent");
 
-    await takeOverTaskSpace();
-    const afterTakeover = await listTaskSpaces();
+    await taskSpaces.takeOver();
+    const afterTakeover = await taskSpaces.list();
     const taken = afterTakeover.find((s) => s.name === taskName);
-    assertEqual(taken.ownership, "agent", "takeOverTaskSpace restores agent ownership");
+    assertEqual(taken.ownership, "agent", "taskSpaces.takeOver restores agent ownership");
 
-    await waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
+    await taskSpaces.waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
 
     // Repeat with explicit name parameter
-    await handOffTaskSpace(taskName);
-    const afterHandoff2 = await listTaskSpaces();
-    assert(afterHandoff2.find((s) => s.name === taskName).ownership !== "agent", "handOffTaskSpace(name) transfers ownership away from agent");
+    await taskSpaces.handOff(taskName);
+    const afterHandoff2 = await taskSpaces.list();
+    assert(afterHandoff2.find((s) => s.name === taskName).ownership !== "agent", "taskSpaces.handOff(name) transfers ownership away from agent");
 
-    await takeOverTaskSpace(taskName);
-    const afterTakeover2 = await listTaskSpaces();
-    assertEqual(afterTakeover2.find((s) => s.name === taskName).ownership, "agent", "takeOverTaskSpace(name) restores agent ownership");
+    await taskSpaces.takeOver(taskName);
+    const afterTakeover2 = await taskSpaces.list();
+    assertEqual(afterTakeover2.find((s) => s.name === taskName).ownership, "agent", "taskSpaces.takeOver(name) restores agent ownership");
 
-    await waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
+    await taskSpaces.waitForAgentControl(taskName, { interval: 0.1, timeout: 5 });
   `;
 }
