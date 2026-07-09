@@ -19,7 +19,7 @@ import { emitUpdateNotice, type VersionSource } from "./update-notice.js";
 
 type HelperFunction = (...args: unknown[]) => unknown;
 type EgoRuntime = Record<string, unknown> & {
-  helpers?: Record<string, HelperFunction>;
+  helpers?: Record<string, unknown>;
   learnings?: Record<string, unknown>;
 };
 type InstallTarget = Record<string, unknown> & {
@@ -37,6 +37,106 @@ export * from "./helpers.js";
 export { runMain } from "./run.js";
 
 const SYNC_HELPERS = new Set(["help"]);
+const SYNC_FACTORY_HELPERS = new Set([
+  "page.locator",
+  "page.getByRole",
+  "page.getByText",
+  "page.getByLabel",
+  "page.getByPlaceholder",
+  "page.getByAltText",
+  "page.getByTitle",
+  "page.getByTestId",
+  "page.locator.first",
+  "page.locator.nth",
+  "page.locator.last",
+  "page.locator.locator",
+  "page.locator.getByRole",
+  "page.locator.getByText",
+  "page.locator.getByLabel",
+  "page.locator.getByPlaceholder",
+  "page.locator.getByAltText",
+  "page.locator.getByTitle",
+  "page.locator.getByTestId",
+  "page.locator.filter",
+]);
+const SYNC_FACTORY_METHODS = new Set([
+  "locator",
+  "getByRole",
+  "getByText",
+  "getByLabel",
+  "getByPlaceholder",
+  "getByAltText",
+  "getByTitle",
+  "getByTestId",
+  "first",
+  "nth",
+  "last",
+  "filter",
+]);
+const LEGACY_GLOBAL_HELPERS = [
+  "click",
+  "dblclick",
+  "hover",
+  "drag",
+  "wheel",
+  "scrollIntoViewIfNeeded",
+  "press",
+  "insertText",
+  "focus",
+  "fill",
+  "pressSequentially",
+  "check",
+  "uncheck",
+  "setChecked",
+  "selectOption",
+  "dispatchEvent",
+  "textContent",
+  "innerText",
+  "inputValue",
+  "isChecked",
+  "getAttribute",
+  "count",
+  "allInnerTexts",
+  "allTextContents",
+  "evaluateAll",
+  "goto",
+  "pageInfo",
+  "listTabs",
+  "currentTab",
+  "switchTab",
+  "openOrReuseTab",
+  "closeTab",
+  "snapshot",
+  "snapshotRaw",
+  "screenshot",
+  "elementCenter",
+  "drainEvents",
+  "waitForTimeout",
+  "waitForLoadState",
+  "waitForSelector",
+  "waitForFunction",
+  "waitForURL",
+  "waitForRequest",
+  "waitForResponse",
+  "setInputFiles",
+  "evaluate",
+  "serverFetch",
+  "browserFetch",
+  "listTaskSpaces",
+  "switchTaskSpace",
+  "newTaskSpace",
+  "useOrCreateTaskSpace",
+  "claimTaskSpace",
+  "completeTaskSpace",
+  "handOffTaskSpace",
+  "takeOverTaskSpace",
+  "waitForAgentControl",
+  "siteSkills",
+  "siteSkillsForUrl",
+  "runSiteTool",
+  "runSiteBrowserTool",
+  "learnContext",
+];
 // Marks an ego runtime whose mutating methods have already been wrapped, so a
 // second installEgoSdk call cannot double-wrap createTab / task-space methods.
 const EGO_WRAPPED = Symbol.for("egoBrowser.sdkWrapped");
@@ -49,32 +149,28 @@ export function installEgoSdk(
     return target;
   }
   const context = options.context || helpers.helperContext();
+  for (const name of LEGACY_GLOBAL_HELPERS) {
+    if (Object.prototype.hasOwnProperty.call(target, name)) {
+      delete target[name];
+    }
+  }
   const readySignal = Promise.resolve(options.ready);
   let readyError = null;
   readySignal.catch((error) => {
     readyError = error;
   });
-  const installed: Record<string, HelperFunction> = {};
+  const installed: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(context)) {
-    if (typeof value !== "function") {
-      continue;
-    }
     const exposed = SYNC_HELPERS.has(name)
       ? value
-      : async (...args: unknown[]) => {
-          await readySignal;
-          if (readyError) {
-            throw readyError;
-          }
-          return value(...args);
-        };
+      : wrapReady(value, readySignal, () => readyError, [name]);
     Object.defineProperty(target, name, {
       value: exposed,
       writable: true,
       configurable: true,
       enumerable: false,
     });
-    installed[name] = exposed as HelperFunction;
+    installed[name] = exposed;
   }
   const usingDefaultLog = !options.cliLog;
   // The agent's primary output channel is console.log. Route it through the host's
@@ -98,7 +194,10 @@ export function installEgoSdk(
       usingDefaultLog ? setNoticeTrailer : (line) => options.cliLog?.(line),
     );
     target.ego.helpers = installed;
-    target.ego.learnings = {};
+    target.ego.learnings =
+      installed.site && typeof installed.site === "object"
+        ? (installed.site as Record<string, unknown>)
+        : {};
     if (!(target.ego as Record<symbol, unknown>)[EGO_WRAPPED]) {
       wrapCreateTab(target.ego);
       wrapInvalidating(target.ego, [
@@ -115,6 +214,43 @@ export function installEgoSdk(
     exposeEgoMethods(target, target.ego);
   }
   return target;
+}
+
+function wrapReady(
+  value: unknown,
+  readySignal: Promise<unknown>,
+  readyError: () => unknown,
+  path: string[] = [],
+): unknown {
+  if (typeof value === "function") {
+    if (isSyncFactoryHelper(path)) {
+      return (...args: unknown[]) =>
+        wrapReady(value(...args), readySignal, readyError, path);
+    }
+    return async (...args: unknown[]) => {
+      await readySignal;
+      const error = readyError();
+      if (error) {
+        throw error;
+      }
+      return value(...args);
+    };
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const wrapped: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    wrapped[key] = wrapReady(child, readySignal, readyError, [...path, key]);
+  }
+  return wrapped;
+}
+
+function isSyncFactoryHelper(path: string[]) {
+  if (SYNC_FACTORY_HELPERS.has(path.join("."))) {
+    return true;
+  }
+  return path[0] === "page" && SYNC_FACTORY_METHODS.has(path.at(-1) || "");
 }
 
 if (isDirectCli()) {

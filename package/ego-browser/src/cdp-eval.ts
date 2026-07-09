@@ -2,8 +2,6 @@ import { send, state } from "./state.js";
 
 class TimeoutError extends Error {}
 
-let hasWarnedAboutFunctionJs = false;
-
 /**
  * Send a raw Chrome DevTools Protocol command.
  * @param {string} method CDP method name, for example Runtime.evaluate.
@@ -28,42 +26,42 @@ export async function cdp(method, params: any = {}, sessionId = undefined) {
 }
 
 /**
- * Evaluate JavaScript in the current page or a target tab.
- * @param {string | Function} expression JavaScript source string or a function whose body should be evaluated.
- *   Passing a function is accepted as a convenience but emits a one-time warning to stderr so callers can
- *   switch to the canonical string form. Top-level return statements in strings are auto-wrapped in an IIFE.
- * @param {string} [targetId] Optional target id to attach and evaluate in.
+ * Evaluate JavaScript in the current page, Playwright-style.
+ * @param {string | Function} pageFunction JavaScript expression string or function called with arg.
+ *   String expressions with top-level return statements are auto-wrapped in an IIFE for compatibility.
+ * @param {unknown} [arg] Optional serializable argument passed to function pageFunctions.
+ *   For legacy string expressions, a string second argument is treated as a target id to evaluate in.
  * @returns {Promise<any>} Runtime.evaluate return-by-value result.
  */
-export async function evaluate(expression, targetId = undefined) {
-  if (typeof expression === "function") {
-    const source = expression.toString();
-    if (!hasWarnedAboutFunctionJs) {
-      hasWarnedAboutFunctionJs = true;
-      process.stderr.write(
-        `[ego-browser] evaluate() received a function and auto-wrapped it (${jsSnippet(source, 80)}).\n` +
-          `  evaluate() is a thin wrapper over CDP Runtime.evaluate; it takes a string expression,\n` +
-          `  not a Puppeteer/Playwright-style callable. Auto-wrap does NOT capture closure\n` +
-          `  variables and has NO args channel.\n` +
-          `  Prefer:\n` +
-          `    evaluate(\`<expression>\`)  // pure expression or explicit IIFE\n`,
+export async function evaluate(pageFunction, arg = undefined) {
+  let expression;
+  let sessionId;
+  if (typeof pageFunction === "function") {
+    expression = `(${pageFunction.toString()})(${serializedArg(arg)})`;
+  } else if (typeof pageFunction === "string") {
+    if (arg !== undefined && typeof arg !== "string") {
+      throw new TypeError(
+        "page.evaluate string form only accepts a legacy target id as its second argument; pass a function pageFunction to use args",
       );
     }
-    expression = `(${source})()`;
-  } else if (typeof expression !== "string") {
+    expression = pageFunction;
+    if (arg !== undefined) {
+      sessionId = (
+        await cdp("Target.attachToTarget", {
+          targetId: arg,
+          flatten: true,
+        })
+      ).sessionId;
+    }
+  } else {
     throw new TypeError(
-      `evaluate() expects a string expression or function, got ${expression === null ? "null" : typeof expression}`,
+      `page.evaluate expects a string expression or function pageFunction, got ${pageFunction === null ? "null" : typeof pageFunction}`,
     );
   }
-  const sessionId = targetId
-    ? (await cdp("Target.attachToTarget", { targetId, flatten: true }))
-        .sessionId
-    : undefined;
-  let finalExpression = expression;
   if (hasReturnStatement(expression) && !expression.trim().startsWith("(")) {
-    finalExpression = `(function(){${expression}})()`;
+    expression = `(function(){${expression}})()`;
   }
-  return runtimeEvaluate(finalExpression, sessionId, true);
+  return runtimeEvaluate(expression, sessionId, true);
 }
 
 async function runtimeEvaluate(
@@ -219,4 +217,8 @@ export function hasReturnStatement(expression) {
     }
   }
   return false;
+}
+
+function serializedArg(arg) {
+  return arg === undefined ? "" : JSON.stringify(arg);
 }

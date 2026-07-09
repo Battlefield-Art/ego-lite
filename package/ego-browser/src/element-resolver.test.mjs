@@ -25,6 +25,10 @@ const AX_TREE = {
   ],
 };
 
+function internalSelector(kind, data) {
+  return `internal:${kind}:${encodeURIComponent(JSON.stringify(data))}`;
+}
+
 test("resolveElementCenter computes the center from a valid box model", async () => {
   const refMap = new RefMap();
   refMap.add("5", 100, "button", "ok");
@@ -164,6 +168,24 @@ test("css locator matched multiple elements is permanent", async () => {
   );
 });
 
+test("raw Playwright has-text selector resolves through filtered CSS candidates", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(params.expression, /querySelectorAll\("button"\)/);
+      assert.match(params.expression, /includes\("Skip to Checkout"\)/);
+      return { result: { value: { x: 10, y: 20 } } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    'button:has-text("Skip to Checkout")',
+  );
+  assert.deepEqual(point, { x: 10, y: 20, sessionId: undefined });
+});
+
 test("role locator matches numeric AX names", async () => {
   const cdp = new FakeCDP(async (method) => {
     if (method === "Accessibility.getFullAXTree") {
@@ -216,4 +238,142 @@ test("role locator matches boolean AX names", async () => {
     "loc=role:button[name=true]",
   );
   assert.deepEqual(point, { x: 20, y: 40, sessionId: undefined });
+});
+
+test("role locator matches regex AX names", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Accessibility.getFullAXTree") {
+      return {
+        nodes: [
+          {
+            role: { value: "button" },
+            name: { value: "Skip to Checkout" },
+            backendDOMNodeId: 100,
+          },
+        ],
+      };
+    }
+    if (method === "DOM.getBoxModel") {
+      assert.equal(params.backendNodeId, 100);
+      return { model: { content: [10, 20, 30, 20, 30, 60, 10, 60] } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    `loc=role:button[name=${JSON.stringify({ regex: "checkout", flags: "i" })}]`,
+  );
+  assert.deepEqual(point, { x: 20, y: 40, sessionId: undefined });
+});
+
+test("internal nth role locator resolves the requested AX match", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Accessibility.getFullAXTree") {
+      return {
+        nodes: [
+          {
+            role: { value: "button" },
+            name: { value: "Download" },
+            backendDOMNodeId: 100,
+          },
+          {
+            role: { value: "button" },
+            name: { value: "Download" },
+            backendDOMNodeId: 200,
+          },
+        ],
+      };
+    }
+    if (method === "DOM.getBoxModel") {
+      assert.equal(params.backendNodeId, 200);
+      return { model: { content: [20, 20, 40, 20, 40, 60, 20, 60] } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    'internal:nth=1;loc=role:button[name="Download"]',
+  );
+  assert.deepEqual(point, { x: 30, y: 40, sessionId: undefined });
+});
+
+test("text locator resolves through browser-side text matching", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(params.expression, /querySelectorAll\('body \*'\)/);
+      assert.match(params.expression, /Allow access/);
+      return { result: { value: { x: 10, y: 20 } } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    "text=Allow access",
+  );
+  assert.deepEqual(point, { x: 10, y: 20, sessionId: undefined });
+});
+
+test("label locator resolves form controls by label text", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(params.expression, /document\.querySelectorAll\('label'\)/);
+      assert.match(params.expression, /Email/);
+      return { result: { value: { x: 30, y: 40 } } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    'loc=label:"Email"',
+  );
+  assert.deepEqual(point, { x: 30, y: 40, sessionId: undefined });
+});
+
+test("test id locator resolves data-testid attributes exactly", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(params.expression, /\[data-testid\]/);
+      assert.match(params.expression, /getAttribute\("data-testid"\)/);
+      assert.match(params.expression, /=== "submit"/);
+      return { result: { value: { x: 30, y: 40 } } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    'loc=testid:exact:"submit"',
+  );
+  assert.deepEqual(point, { x: 30, y: 40, sessionId: undefined });
+});
+
+test("scoped locator center uses the matched descendant", async () => {
+  const selector = internalSelector("scope", {
+    base: "form",
+    child: 'loc=testid:exact:"submit"',
+  });
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(params.expression, /querySelectorAll\("form"\)/);
+      assert.match(params.expression, /\[data-testid\]/);
+      return { result: { value: { x: 30, y: 40 } } };
+    }
+    return {};
+  });
+  const point = await resolveElementCenter(
+    cdp,
+    undefined,
+    new RefMap(),
+    selector,
+  );
+  assert.deepEqual(point, { x: 30, y: 40, sessionId: undefined });
 });

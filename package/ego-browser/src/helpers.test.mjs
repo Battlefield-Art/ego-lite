@@ -93,17 +93,127 @@ test("listTaskSpaces throws on binding error objects", async () => {
   );
 });
 
-test("taskspace helper surface exposes public helpers including claimTaskSpace", () => {
+test("helper surface exposes Playwright-style object facades", () => {
   const context = helperContext();
-  assert.equal(typeof context.listTaskSpaces, "function");
-  assert.equal(typeof context.switchTaskSpace, "function");
-  assert.equal(typeof context.newTaskSpace, "function");
-  assert.equal(typeof context.useOrCreateTaskSpace, "function");
-  assert.equal(typeof context.claimTaskSpace, "function");
-  assert.equal(typeof helperExports.openOrReuseTab, "function");
-  assert.equal(typeof context.openOrReuseTab, "function");
-  assert.equal(typeof helperExports.closeTab, "function");
-  assert.equal(typeof context.closeTab, "function");
+  assert.equal(typeof context.page, "object");
+  assert.equal(typeof context.page.goto, "function");
+  assert.equal(typeof context.page.locator, "function");
+  assert.equal(typeof context.page.getByText, "function");
+  assert.equal(typeof context.page.getByLabel, "function");
+  assert.equal(typeof context.page.getByPlaceholder, "function");
+  assert.equal(typeof context.page.getByAltText, "function");
+  assert.equal(typeof context.page.getByTitle, "function");
+  assert.equal(typeof context.page.getByTestId, "function");
+  assert.equal(typeof context.page.waitForLoadState, "function");
+  assert.equal(typeof context.page.waitForURL, "function");
+  assert.equal(typeof context.page.waitForRequest, "function");
+  assert.equal(typeof context.page.waitForResponse, "function");
+  assert.equal(typeof context.page.keyboard.press, "function");
+  assert.equal(typeof context.page.keyboard.down, "function");
+  assert.equal(typeof context.page.keyboard.up, "function");
+  assert.equal(typeof context.page.keyboard.type, "function");
+  assert.equal(typeof context.page.mouse.click, "function");
+  assert.equal(typeof context.page.mouse.down, "function");
+  assert.equal(typeof context.page.mouse.up, "function");
+  const locator = context.page.locator("#target");
+  assert.equal(typeof locator.click, "function");
+  assert.equal(typeof locator.fill, "function");
+  assert.equal(typeof locator.press, "function");
+  assert.equal(typeof locator.locator, "function");
+  assert.equal(typeof locator.getByRole, "function");
+  assert.equal(typeof locator.getByText, "function");
+  assert.equal(typeof locator.getByLabel, "function");
+  assert.equal(typeof locator.getByPlaceholder, "function");
+  assert.equal(typeof locator.getByAltText, "function");
+  assert.equal(typeof locator.getByTitle, "function");
+  assert.equal(typeof locator.getByTestId, "function");
+  assert.equal(typeof locator.filter, "function");
+  assert.equal(typeof locator.clear, "function");
+  assert.equal(typeof locator.blur, "function");
+  assert.equal(typeof locator.innerHTML, "function");
+  assert.equal(typeof locator.isVisible, "function");
+  assert.equal(typeof locator.isHidden, "function");
+  assert.equal(typeof locator.isEnabled, "function");
+  assert.equal(typeof locator.isDisabled, "function");
+  assert.equal(typeof locator.isEditable, "function");
+  assert.equal(typeof locator.boundingBox, "function");
+  assert.equal(typeof locator.screenshot, "function");
+  assert.equal(typeof locator.first, "function");
+  assert.equal(typeof locator.nth, "function");
+  assert.equal(typeof locator.last, "function");
+  assert.equal(typeof locator.nth(1).click, "function");
+  assert.equal(typeof locator.evaluate, "function");
+  assert.equal(typeof locator.evaluateAll, "function");
+  assert.equal(typeof locator.extractAll, "undefined");
+  assert.equal(typeof context.page.getByText("Allow").click, "function");
+  assert.equal(typeof context.page.getByLabel("Email").fill, "function");
+  assert.equal(
+    context.page.getByTestId("submit").selector,
+    'loc=testid:exact:"submit"',
+  );
+  const roleRegexSelector = context.page.getByRole("button", {
+    name: /New York \(JFK\)/i,
+  }).selector;
+  assert.match(roleRegexSelector, /^loc=role:button\[name=/);
+  assert.deepEqual(
+    JSON.parse(roleRegexSelector.match(/\[name=([\s\S]+)\]$/)[1]),
+    {
+      regex: "New York \\(JFK\\)",
+      flags: "i",
+    },
+  );
+  assert.deepEqual(
+    JSON.parse(
+      decodeURIComponent(
+        locator.getByText("Save").selector.slice("internal:scope:".length),
+      ),
+    ),
+    { base: "#target", child: 'loc=text:"Save"' },
+  );
+  assert.deepEqual(
+    JSON.parse(
+      decodeURIComponent(
+        locator
+          .filter({ hasText: /Ready/i })
+          .selector.slice("internal:filter:".length),
+      ),
+    ),
+    { base: "#target", hasText: { regex: "Ready", flags: "i" } },
+  );
+  const scopedRole = JSON.parse(
+    decodeURIComponent(
+      locator
+        .getByRole("button", { name: /Save/i })
+        .selector.slice("internal:scope:".length),
+    ),
+  );
+  assert.equal(scopedRole.base, "#target");
+  assert.deepEqual(
+    JSON.parse(scopedRole.child.match(/\[name=([\s\S]+)\]$/)[1]),
+    {
+      regex: "Save",
+      flags: "i",
+    },
+  );
+  assert.equal(typeof context.page.setDefaultTimeout, "function");
+  assert.equal(typeof context.page.waitForEvent, "function");
+  assert.equal(typeof context.browser.openOrReuseTab, "function");
+  assert.equal(typeof context.browser.closeTab, "function");
+  assert.equal(typeof context.taskSpaces.useOrCreate, "function");
+  assert.equal(typeof context.taskSpaces.claim, "function");
+  assert.equal(typeof context.site.runTool, "function");
+  assert.equal(typeof context.fetch.server, "function");
+  assert.equal(typeof context.fetch.browser, "function");
+  assert.equal(typeof context.cdp, "function");
+  assert.equal(typeof context.help, "function");
+  assert.equal(typeof helperExports.focus, "function");
+  assert.equal(typeof helperExports.waitForRequest, "function");
+  assert.equal(typeof helperExports.waitForResponse, "function");
+  assert.equal(typeof context.focus, "undefined");
+  assert.equal(typeof context.click, "undefined");
+  assert.equal(typeof context.fill, "undefined");
+  assert.equal(typeof context.goto, "undefined");
+  assert.equal(typeof context.evaluate, "undefined");
   assert.equal("newTab" in helperExports, false);
   assert.equal("newTab" in context, false);
   assert.equal("elementEval" in helperExports, false);

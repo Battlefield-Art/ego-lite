@@ -3,7 +3,7 @@
 The Node.js helper layer that runs inside the `ego-browser` Chromium browser. The browser exposes an `ego` runtime (tabs, CDP, snapshots, task spaces); this package bundles the agent-facing helpers that script that runtime.
 
 ```text
-ego-browser (Chromium) → globalThis.ego → helper functions → agent heredoc
+ego-browser (Chromium) -> globalThis.ego -> Playwright-style helper facades -> agent heredoc
 ```
 
 ## Build and run
@@ -14,13 +14,13 @@ npm run build     # bundle to dist/out/index.js
 npm test          # build + tsc --noEmit + node --test
 ```
 
-The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, all helpers (`snapshot`, `click`, `useOrCreateTaskSpace`, ...) are pre-imported in camelCase.
+The build emits a single ESM file `dist/out/index.js`. The ego-browser browser dispatches `ego-browser nodejs <<'EOF' ... EOF` heredocs to that bundle. Inside the heredoc, Playwright-style facades (`page`, `page.locator`, `browser`, `taskSpaces`, `site`, `fetch`, `cdp`) are preloaded.
 
 ```bash
 ego-browser nodejs <<'EOF'
-await useOrCreateTaskSpace('demo')
-await openOrReuseTab('https://example.com', { wait: true })
-console.log(await snapshot())
+await taskSpaces.useOrCreate('demo')
+await browser.openOrReuseTab('https://example.com', { wait: true })
+console.log(await page.snapshot())
 EOF
 ```
 
@@ -28,7 +28,7 @@ Local invocation without the browser (for debugging the helper bundle itself) re
 
 ```bash
 node dist/out/index.js <<'JS'
-console.log(await pageInfo())
+console.log(await page.info())
 JS
 ```
 
@@ -46,7 +46,7 @@ Override with `EGO_BROWSER_AGENT_WORKSPACE`:
 
 ```bash
 EGO_BROWSER_AGENT_WORKSPACE=/path/to/skill ego-browser nodejs <<'EOF'
-console.log(await siteSkills())
+console.log(await site.skills())
 EOF
 ```
 
@@ -61,17 +61,19 @@ npm run validate:site-skills    # alias: validate:learnings
 ```
 src/
   run.ts                 CLI entry; reads stdin, injects helpers, executes
-  helpers.ts             public helper surface (re-exports + glue)
+  helpers.ts             public Playwright-style facades plus internal helper glue
   browser-runtime.ts     bridge to globalThis.ego (CDP, sessions, events)
   element-resolver.ts    resolves @eN / CSS / XPath / ARIA targets
   driver/
     pointer.ts           click, hover, drag, wheel, scrollIntoViewIfNeeded
     observe.ts           snapshot, screenshot, elementCenter
-    keyboard.ts          insertText, press, fill, dispatchEvent
+    keyboard.ts          focus, insertText, press, pressSequentially, fill, check, uncheck, setChecked, selectOption, dispatchEvent
+    locator.ts           first/nth/last selectors, getBy* text-style locators, textContent, innerText, inputValue, isChecked, getAttribute, count, allInnerTexts, allTextContents, evaluate, evaluateAll, extractAll
     nav.ts               tabs, goto, openOrReuseTab, closeTab
     load.ts              waitForDocumentLoad and load orchestration
-    waits.ts             waitForTimeout, waitForLoadState, waitForSelector
+    waits.ts             waitForTimeout, waitForLoadState, waitForSelector, waitForFunction, waitForURL
     files.ts             setInputFiles
+    downloads.ts         page.waitForEvent("download") and download facade
   http.ts                serverFetch, browserFetch
   cdp-eval.ts            cdp() and evaluate() raw eval
   learning/              site-learnings discovery and manifest validation
@@ -85,7 +87,7 @@ The top-level repo README has the full helper inventory and the task-space / con
 
 - The browser runtime owns tabs, task spaces, CDP transport, snapshots, and event delivery. This package keeps only agent-facing ergonomics.
 - Snapshot helpers use the browser runtime contract: `ego.snapshot({ scope, includeActionMarks, includeStableLocator })`.
-- Public helpers are camelCase only.
+- Public agent-facing helpers are object-style facades; internal implementation helpers remain camelCase.
 - Site-specific reusable experience belongs under `skills/ego-browser/learnings/`, not in this package.
 
 ## License

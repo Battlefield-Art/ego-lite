@@ -1,4 +1,4 @@
-import { cdp } from "../cdp-eval.js";
+import { cdp, runtimeValue } from "../cdp-eval.js";
 import { browserRefMap, ensureRefMapForRef } from "../ref-state.js";
 import { resolveElementObjectId } from "../element-resolver.js";
 
@@ -12,7 +12,12 @@ import { resolveElementObjectId } from "../element-resolver.js";
  */
 export async function resolveHandle(selectorOrRef) {
   await ensureRefMapForRef(selectorOrRef);
-  return resolveElementObjectId({ sendRaw: cdp }, undefined, browserRefMap, selectorOrRef);
+  return resolveElementObjectId(
+    { sendRaw: cdp },
+    undefined,
+    browserRefMap,
+    selectorOrRef,
+  );
 }
 
 /**
@@ -55,15 +60,26 @@ export async function withHandle(selectorOrRef, fn) {
  * @param {Array<unknown>} [args=[]] Arguments passed by value.
  * @returns {Promise<{result: any, objectId: string, sessionId?: string}>}
  */
-export async function resolveAndCall(selectorOrRef, functionDeclaration, args = []) {
+export async function resolveAndCall(
+  selectorOrRef,
+  functionDeclaration,
+  args = [],
+) {
   return withHandle(selectorOrRef, async ({ objectId, sessionId }) => {
-    const result = await cdp("Runtime.callFunctionOn", {
-      functionDeclaration,
-      objectId,
-      arguments: args.map((value) => ({ value })),
-      returnByValue: true,
-      awaitPromise: false
-    }, sessionId);
+    const result = await cdp(
+      "Runtime.callFunctionOn",
+      {
+        functionDeclaration,
+        objectId,
+        arguments: args.map((value) => ({ value })),
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      sessionId,
+    );
+    if (result.exceptionDetails || result.result?.subtype === "error") {
+      runtimeValue(result, functionDeclaration);
+    }
     return { result, objectId, sessionId };
   });
 }

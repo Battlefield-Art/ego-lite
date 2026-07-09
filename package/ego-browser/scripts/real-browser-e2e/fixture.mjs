@@ -115,6 +115,14 @@ export async function startFixtureServer(taskName) {
       res.end("a".repeat(n));
       return;
     }
+    if (url.pathname === "/download/sample.txt") {
+      res.writeHead(200, {
+        "content-type": "text/plain",
+        "content-disposition": 'attachment; filename="sample-download.txt"',
+      });
+      res.end("download fixture");
+      return;
+    }
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
@@ -388,11 +396,12 @@ function pageHtml(kind) {
       <p data-testid="status">ready</p>
 
       <div class="card">
-        <button id="click-button" class="btn-primary" aria-label="Increment counter">Click counter</button>
+        <button id="click-button" class="btn-primary" aria-label="Increment counter" title="Counter button">Click counter</button>
         <span id="click-count">0</span>
         <button class="duplicate-action" type="button">Duplicate action</button>
         <button class="duplicate-action" type="button">Duplicate action</button>
         <a id="nav-link" href="/nav-target" style="margin-left:8px">Go to nav target</a>
+        <a id="download-link" href="/download/sample.txt" download style="margin-left:8px">Download sample</a>
       </div>
 
       <div class="card-row">
@@ -436,7 +445,7 @@ function pageHtml(kind) {
           <h2>Form Inputs</h2>
           <div class="card">
             <div class="form-cols">
-              <label><span>Text input</span><input id="text-input" value="initial"></label>
+              <label><span>Text input</span><input id="text-input" placeholder="Type text" value="initial"></label>
               <label><span>Append input</span><input id="append-input" value="base"></label>
             </div>
             <label><span>Text area</span><textarea id="text-area">seed</textarea></label>
@@ -456,6 +465,7 @@ function pageHtml(kind) {
         <div>
           <h2>Rich Text &amp; Dynamic DOM</h2>
           <div class="card">
+            <img id="alt-logo" alt="Ego fixture logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" style="width:1px;height:1px;opacity:0" />
             <label><span>Content editable</span><div id="rich-editor" contenteditable="true">edit me</div></label>
             <div class="dynamic-actions">
               <button id="add-element" type="button">Add element</button>
