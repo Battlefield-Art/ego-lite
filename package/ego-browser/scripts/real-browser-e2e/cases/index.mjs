@@ -12,6 +12,7 @@ import {
 } from "./pointer.mjs";
 import { keyboardCase } from "./keyboard.mjs";
 import { keyboardRegressionCase } from "./keyboard-regression.mjs";
+import { macosInputRegressionCase } from "./macos-input-regression.mjs";
 import {
   cdpJsHelpCase,
   fetchHelpersCase,
@@ -40,6 +41,10 @@ export const e2eCases = [
   },
   { name: "keyboard and file helpers", body: keyboardCase },
   { name: "keyboard regression", body: keyboardRegressionCase },
+  {
+    name: "macOS bare Meta input isolation",
+    body: macosInputRegressionCase,
+  },
   { name: "wait helpers", body: waitHelpersCase },
   { name: "fetch helpers", body: fetchHelpersCase },
   { name: "cdp js help", body: cdpJsHelpCase },
