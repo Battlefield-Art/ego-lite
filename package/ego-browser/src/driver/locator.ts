@@ -1,5 +1,8 @@
 import { cdp, runtimeValue } from "../cdp-eval.js";
-import { ElementResolutionError } from "../element-resolver.js";
+import {
+  ElementResolutionError,
+  queryRoleLocatorBackendNodeIds,
+} from "../element-resolver.js";
 import { queryAllExpression as buildQueryAllExpression } from "../locator-query.js";
 import { parseRef } from "../ref-map.js";
 import { releaseHandle, resolveAndCall, resolveHandle } from "./element-ops.js";
@@ -218,6 +221,10 @@ export async function count(selector) {
     await releaseHandle(handle.objectId, handle.sessionId);
     return 1;
   }
+  const backendNodeIds = await queryRoleBackendNodeIds(selector);
+  if (backendNodeIds !== null) {
+    return backendNodeIds.length;
+  }
   return readQueryAll(selector, "return elements.length;");
 }
 
@@ -286,6 +293,10 @@ export async function evaluateAll(selector, pageFunction, arg = undefined) {
       [functionSource, arg],
     );
   }
+  const backendNodeIds = await queryRoleBackendNodeIds(selector);
+  if (backendNodeIds !== null) {
+    return evaluateRoleBackendNodes(backendNodeIds, functionSource, arg, true);
+  }
   return evaluateQueryAll(selector, functionSource, arg);
 }
 
@@ -311,6 +322,15 @@ async function readOptionalElement(
 }
 
 async function readQueryAll(selector, body) {
+  const backendNodeIds = await queryRoleBackendNodeIds(selector);
+  if (backendNodeIds !== null) {
+    return evaluateRoleBackendNodes(
+      backendNodeIds,
+      `function(elements){${body}}`,
+      undefined,
+      false,
+    );
+  }
   const expression = `(() => {
     const elements = ${buildQueryAllExpression(selector)};
     ${body}
@@ -321,6 +341,73 @@ async function readQueryAll(selector, body) {
     awaitPromise: false,
   });
   return runtimeValue(result, expression);
+}
+
+async function evaluateRoleBackendNodes(
+  backendNodeIds,
+  functionSource,
+  arg,
+  awaitPromise,
+) {
+  if (backendNodeIds.length === 0) {
+    const expression = `(() => {
+      const pageFunction = (0, eval)(${JSON.stringify(`(${functionSource})`)});
+      return pageFunction([], ${serializedArg(arg)});
+    })()`;
+    const result = await cdp("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise,
+    });
+    return runtimeValue(result, expression);
+  }
+
+  const handles = [];
+  try {
+    for (const backendNodeId of backendNodeIds) {
+      const result = await cdp("DOM.resolveNode", {
+        backendNodeId,
+        objectGroup: "ego-browser-role-collection",
+      });
+      const objectId = result.object?.objectId;
+      if (!objectId) {
+        throw new ElementResolutionError(
+          `No objectId for AX backend node ${backendNodeId}`,
+          "permanent",
+        );
+      }
+      handles.push({ objectId });
+    }
+
+    const [first, ...rest] = handles;
+    const functionDeclaration = `function(...args) {
+      const functionSource = args.at(-2);
+      const arg = args.at(-1);
+      const elements = [this, ...args.slice(0, -2)];
+      const pageFunction = (0, eval)("(" + functionSource + ")");
+      return pageFunction(elements, arg);
+    }`;
+    const result = await cdp("Runtime.callFunctionOn", {
+      functionDeclaration,
+      objectId: first.objectId,
+      arguments: [
+        ...rest.map(({ objectId }) => ({ objectId })),
+        { value: functionSource },
+        { value: arg },
+      ],
+      returnByValue: true,
+      awaitPromise,
+    });
+    return runtimeValue(result, functionDeclaration);
+  } finally {
+    for (const { objectId } of handles) {
+      await releaseHandle(objectId, undefined);
+    }
+  }
+}
+
+function queryRoleBackendNodeIds(selector) {
+  return queryRoleLocatorBackendNodeIds({ sendRaw: cdp }, undefined, selector);
 }
 
 async function evaluateQueryAll(selector, functionSource, arg) {

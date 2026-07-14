@@ -402,6 +402,12 @@ function pageHtml(kind) {
         <button class="duplicate-action" type="button">Duplicate action</button>
         <a id="nav-link" href="/nav-target" style="margin-left:8px">Go to nav target</a>
         <a id="download-link" href="/download/sample.txt" download style="margin-left:8px">Download sample</a>
+        <div id="home-type-listbox" role="listbox" aria-label="Home type" style="display:inline-flex;gap:6px;margin-left:8px">
+          <button id="house-option-primary" type="button" role="option" aria-selected="false">House</button>
+          <button id="house-option-secondary" type="button" role="option" aria-selected="false">House</button>
+          <!-- Hidden responsive-variant dupe: visible to a naive DOM role scan, ignored by the AX tree. -->
+          <button id="house-option-hidden" type="button" role="option" aria-selected="false" style="display:none">House</button>
+        </div>
       </div>
 
       <div class="card-row">
@@ -560,6 +566,14 @@ function pageHtml(kind) {
         window.__fixtureState.doubleClicks += 1;
         window.__fixtureState.lastDoubleClickDetail = event.detail;
       });
+
+      for (const option of document.querySelectorAll("#home-type-listbox [role=option]")) {
+        option.addEventListener("click", () => {
+          for (const peer of document.querySelectorAll("#home-type-listbox [role=option]")) {
+            peer.setAttribute("aria-selected", String(peer === option));
+          }
+        });
+      }
 
       /* ---- hover zone ---- */
       for (const type of ["mousemove", "mouseover"]) {
