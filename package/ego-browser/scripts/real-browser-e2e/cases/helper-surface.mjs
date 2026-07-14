@@ -59,6 +59,21 @@ export function helperSurfaceCase() {
     assertEqual(await page.locator("#text-input").inputValue(), "from placeholder", "getByPlaceholder targets the input");
     assertEqual(await page.getByAltText("Ego fixture logo").count(), 1, "getByAltText finds the image");
     assertEqual(await page.getByTitle("Counter button").count(), 1, "getByTitle finds titled elements");
+    // Role-locator match-set consistency (the Redfin "Locator miss" regression).
+    // The listbox holds two visible "House" options plus one display:none dupe.
+    // A DOM role scan counts all three (no visibility filtering); the AX tree
+    // ignores the hidden one. count()/nth()/click() must all agree on the same
+    // AX set, otherwise "read count, act on the last index" targets past the end.
+    const houseOptions = page.getByRole("option", { name: "House" });
+    const houseCount = await houseOptions.count();
+    assertEqual(houseCount, 2, "count() reports only AX-actionable options (display:none dupe excluded)");
+    assertEqual(await houseOptions.nth(houseCount - 1).innerText(), "House", "nth reads from the same AX match set count() used");
+    await houseOptions.nth(houseCount - 1).click();
+    assertEqual(
+      await houseOptions.nth(houseCount - 1).getAttribute("aria-selected"),
+      "true",
+      "the option count() calls last is exactly the one nth()/click() targets"
+    );
     assertEqual(await page.locator("text=Download sample").count(), 1, "text= locator compatibility works"); // agent-style-ok: compatibility check
     const extracted = await page.locator(".card").first().evaluateAll((cards) =>
       cards.map((card) => ({
