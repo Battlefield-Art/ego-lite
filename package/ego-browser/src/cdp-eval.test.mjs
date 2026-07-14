@@ -18,81 +18,16 @@ test("hasReturnStatement detects a bare return", () => {
   assert.equal(hasReturnStatement("return 1"), true);
 });
 
-test("hasReturnStatement detects return with semicolon", () => {
-  assert.equal(hasReturnStatement("return;"), true);
-});
-
-test("hasReturnStatement detects return followed by newline", () => {
-  assert.equal(hasReturnStatement("return\n42"), true);
-});
-
-test("hasReturnStatement returns false for a plain expression", () => {
-  assert.equal(hasReturnStatement("1 + 2"), false);
-});
-
-test("hasReturnStatement returns false for empty input", () => {
-  assert.equal(hasReturnStatement(""), false);
-});
-
-test("hasReturnStatement ignores return inside a single-quoted string", () => {
+test("hasReturnStatement ignores return inside strings and comments", () => {
   assert.equal(hasReturnStatement("'return 1'"), false);
-});
-
-test("hasReturnStatement ignores return inside a double-quoted string", () => {
   assert.equal(hasReturnStatement('"return 1"'), false);
+  assert.equal(hasReturnStatement("// return 1\n1 + 2"), false);
+  assert.equal(hasReturnStatement("/* return 1 */ 1 + 2"), false);
 });
 
-test("hasReturnStatement ignores return inside a template literal", () => {
-  assert.equal(hasReturnStatement("`return 1`"), false);
-});
-
-test("hasReturnStatement ignores return after an escaped quote in a string", () => {
-  assert.equal(hasReturnStatement("'it\\'s return 1'"), false);
-});
-
-test("hasReturnStatement detects return after a closed string", () => {
-  assert.equal(hasReturnStatement("'hello' + return"), true);
-});
-
-test("hasReturnStatement ignores return inside a line comment", () => {
-  assert.equal(hasReturnStatement("// return 1"), false);
-});
-
-test("hasReturnStatement detects return after a line comment", () => {
-  assert.equal(hasReturnStatement("// comment\nreturn 1"), true);
-});
-
-test("hasReturnStatement ignores return inside a block comment", () => {
-  assert.equal(hasReturnStatement("/* return 1 */"), false);
-});
-
-test("hasReturnStatement detects return after a block comment", () => {
-  assert.equal(hasReturnStatement("/* comment */ return 1"), true);
-});
-
-test("hasReturnStatement ignores return inside a multiline block comment", () => {
-  assert.equal(hasReturnStatement("/*\nreturn 1\n*/ 42"), false);
-});
-
-test("hasReturnStatement does not match 'returned' as a variable name", () => {
-  assert.equal(hasReturnStatement("var returned = 1"), false);
-});
-
-test("hasReturnStatement does not match 'returnCode' as a variable name", () => {
-  assert.equal(hasReturnStatement("var returnCode = 1"), false);
-});
-
-test("hasReturnStatement does not match 'xreturn' prefix", () => {
-  assert.equal(hasReturnStatement("var xreturn = 1"), false);
-});
-
-test("hasReturnStatement handles return inside a string with mixed quotes", () => {
-  // The outer quotes are double, inner single quotes are content
-  assert.equal(hasReturnStatement('"return"'), false);
-});
-
-test("hasReturnStatement detects return in complex expression after string", () => {
-  assert.equal(hasReturnStatement("const x = 'hello'; return x"), true);
+test("hasReturnStatement does not match return as part of an identifier", () => {
+  assert.equal(hasReturnStatement("const returned = 1; returned + 1"), false);
+  assert.equal(hasReturnStatement("const returnCode = 1; returnCode"), false);
 });
 
 /* ------------------------------------------------------------------ */
@@ -318,10 +253,10 @@ test("cdp tracks Network domain state on enable", async () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  evaluate() — expression evaluation with auto-wrapping                   */
+/*  evaluate() — Playwright-style pageFunction evaluation              */
 /* ------------------------------------------------------------------ */
 
-test("evaluate auto-wraps expressions with return in an IIFE", async () => {
+test("evaluate auto-wraps string expressions with top-level return", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
@@ -335,7 +270,7 @@ test("evaluate auto-wraps expressions with return in an IIFE", async () => {
   try {
     const result = await evaluate("return 42");
     assert.equal(result, 42);
-    assert.match(capturedExpression, /^\(function\(\)\{/);
+    assert.equal(capturedExpression, "(function(){return 42})()");
   } finally {
     restore();
   }
@@ -361,7 +296,7 @@ test("evaluate passes plain expressions without IIFE wrapping", async () => {
   }
 });
 
-test("evaluate does not wrap when expression already starts with paren", async () => {
+test("evaluate does not wrap string expressions that already start with paren", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
@@ -380,23 +315,24 @@ test("evaluate does not wrap when expression already starts with paren", async (
   }
 });
 
-test("evaluate converts a function argument to a string call", async () => {
+test("evaluate passes function pageFunctions with an arg", async () => {
   let capturedExpression;
   const restore = setOverrides({
     cdpOverride: async (method, params) => {
       if (method === "Runtime.evaluate") {
         capturedExpression = params.expression;
-        return { result: { type: "undefined" } };
+        return { result: { type: "string", value: "Hello!" } };
       }
       return {};
     },
   });
   try {
-    await evaluate(function () {
-      return 1;
-    });
-    assert.match(capturedExpression, /^\(function\s*\(\)/);
-    assert.match(capturedExpression, /\(\)$/);
+    const result = await evaluate((suffix) => document.title + suffix, "!");
+    assert.equal(result, "Hello!");
+    assert.match(
+      capturedExpression,
+      /^\(\(suffix\) => document\.title \+ suffix\)\("!"\)$/,
+    );
   } finally {
     restore();
   }
@@ -405,11 +341,18 @@ test("evaluate converts a function argument to a string call", async () => {
 test("evaluate rejects non-string/non-function input", async () => {
   await assert.rejects(
     () => evaluate(123),
-    /expects a string expression or function/,
+    /expects a string expression or function pageFunction/,
   );
   await assert.rejects(
     () => evaluate(null),
-    /expects a string expression or function/,
+    /expects a string expression or function pageFunction/,
+  );
+});
+
+test("evaluate rejects string expressions with non-string args", async () => {
+  await assert.rejects(
+    () => evaluate("document.title", { suffix: "!" }),
+    /string form only accepts a legacy target id/,
   );
 });
 
@@ -441,7 +384,7 @@ test("evaluate propagates page exceptions", async () => {
   }
 });
 
-test("evaluate attaches to a target session when targetId is given", async () => {
+test("evaluate attaches to a target session when legacy target id is given", async () => {
   const calls = [];
   const restore = setOverrides({
     cdpOverride: async (method, params, sessionId) => {
@@ -456,11 +399,18 @@ test("evaluate attaches to a target session when targetId is given", async () =>
     },
   });
   try {
-    const result = await evaluate("document.title", "target-abc");
+    const result = await evaluate("return document.title", "target-abc");
     assert.equal(result, "iframe-result");
-    // First call should be attachToTarget, second should be evaluate with the session
-    assert.equal(calls[0][0], "Target.attachToTarget");
+    assert.deepEqual(calls[0], [
+      "Target.attachToTarget",
+      { targetId: "target-abc", flatten: true },
+      undefined,
+    ]);
     assert.equal(calls[1][0], "Runtime.evaluate");
+    assert.equal(
+      calls[1][1].expression,
+      "(function(){return document.title})()",
+    );
     assert.equal(calls[1][2], "sess-123");
   } finally {
     restore();

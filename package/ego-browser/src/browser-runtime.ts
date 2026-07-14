@@ -13,6 +13,7 @@ const BROWSER_LEVEL = (method) =>
 let nextMessageId = 1;
 const pending = new Map();
 const events = [];
+const eventWaiters = [];
 const pageEnabledSessions = new Set();
 const pendingDialogs = new Map();
 export function isBrowserRuntime() {
@@ -159,6 +160,25 @@ export function drainBrowserEvents() {
   return out;
 }
 
+export function waitForBrowserEvent(
+  predicate,
+  timeoutMs = state.defaultTimeout,
+) {
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      predicate,
+      resolve,
+      reject,
+      timer: setTimeout(() => {
+        const index = eventWaiters.indexOf(waiter);
+        if (index >= 0) eventWaiters.splice(index, 1);
+        reject(new Error("page.waitForEvent timed out"));
+      }, timeoutMs),
+    };
+    eventWaiters.push(waiter);
+  });
+}
+
 export function pendingDialog(sessionId = state.sessionId) {
   if (sessionId && pendingDialogs.has(sessionId)) {
     return { ...pendingDialogs.get(sessionId) };
@@ -241,6 +261,21 @@ function handleMessage(message) {
   events.push(data);
   if (events.length > MAX_BUFFERED_EVENTS) {
     events.splice(0, events.length - MAX_BUFFERED_EVENTS);
+  }
+  for (const waiter of [...eventWaiters]) {
+    let matched = false;
+    try {
+      matched = waiter.predicate(data);
+    } catch (error) {
+      clearTimeout(waiter.timer);
+      eventWaiters.splice(eventWaiters.indexOf(waiter), 1);
+      waiter.reject(error);
+      continue;
+    }
+    if (!matched) continue;
+    clearTimeout(waiter.timer);
+    eventWaiters.splice(eventWaiters.indexOf(waiter), 1);
+    waiter.resolve(data);
   }
 }
 

@@ -1,54 +1,75 @@
 export function helperSurfaceCase() {
   return `
-    const expectedHelpers = [
-      "listTaskSpaces",
-      "switchTaskSpace",
-      "newTaskSpace",
-      "useOrCreateTaskSpace",
-      "claimTaskSpace",
-      "completeTaskSpace",
-      "handOffTaskSpace",
-      "takeOverTaskSpace",
-      "waitForAgentControl",
-      "pageInfo",
-      "listTabs",
-      "currentTab",
-      "switchTab",
-      "openOrReuseTab",
-      "closeTab",
-      "goto",
-      "ensureRealTab",
-      "iframeTarget",
-      "snapshot",
-      "snapshotRaw",
-      "screenshot",
-      "elementCenter",
-      "drainEvents",
-      "click",
-      "dblclick",
-      "hover",
-      "drag",
-      "wheel",
-      "scrollIntoViewIfNeeded",
-      "press",
-      "insertText",
-      "fill",
-      "dispatchEvent",
-      "setInputFiles",
-      "waitForTimeout",
-      "waitForLoadState",
-      "waitForSelector",
-      "serverFetch",
-      "browserFetch",
-      "cdp",
-      "evaluate",
-      "help",
-    ];
-    for (const name of expectedHelpers) {
-      assertEqual(typeof globalThis[name], "function", "helper is installed: " + name);
-    }
+    await taskSpaces.useOrCreate(taskName);
+    await resetHome();
+    assertEqual(typeof globalThis.page, "object", "page facade is installed");
+    assertEqual(typeof page.goto, "function", "page.goto is installed");
+    assertEqual(typeof page.locator, "function", "page.locator is installed");
+    assertEqual(typeof page.getByText, "function", "page.getByText is installed");
+    assertEqual(typeof page.getByLabel, "function", "page.getByLabel is installed");
+    assertEqual(typeof page.getByPlaceholder, "function", "page.getByPlaceholder is installed");
+    assertEqual(typeof page.getByAltText, "function", "page.getByAltText is installed");
+    assertEqual(typeof page.getByTitle, "function", "page.getByTitle is installed");
+    assertEqual(typeof page.waitForLoadState, "function", "page.waitForLoadState is installed");
+    assertEqual(typeof page.setDefaultTimeout, "function", "page.setDefaultTimeout is installed");
+    assertEqual(typeof page.waitForEvent, "function", "page.waitForEvent is installed");
+    assertEqual(typeof page.waitForURL, "function", "page.waitForURL is installed");
+    assertEqual(typeof page.keyboard.press, "function", "page.keyboard.press is installed");
+    assertEqual(typeof page.mouse.click, "function", "page.mouse.click is installed");
+    const loc = page.locator("#click-button");
+    assertEqual(typeof loc.click, "function", "locator.click is installed");
+    assertEqual(typeof loc.first, "function", "locator.first is installed");
+    assertEqual(typeof loc.nth, "function", "locator.nth is installed");
+    assertEqual(typeof loc.last, "function", "locator.last is installed");
+    assertEqual(typeof loc.nth(0).click, "function", "locator.nth returns a locator");
+    assertEqual(typeof loc.fill, "function", "locator.fill is installed");
+    assertEqual(typeof loc.evaluate, "function", "locator.evaluate is installed");
+    assertEqual(typeof loc.evaluateAll, "function", "locator.evaluateAll is installed");
+    assertEqual(typeof loc.extractAll, "undefined", "non-Playwright locator.extractAll is not exposed");
+    assertEqual(typeof page.getByText("Click counter").click, "function", "getByText returns a locator");
+    assertEqual(typeof page.getByLabel("Text input").fill, "function", "getByLabel returns a locator");
+    assertEqual(typeof page.getByPlaceholder("Type text").fill, "function", "getByPlaceholder returns a locator");
+    assertEqual(typeof page.getByAltText("Ego fixture logo").count, "function", "getByAltText returns a locator");
+    assertEqual(typeof page.getByTitle("Counter button").click, "function", "getByTitle returns a locator");
+    assertEqual(typeof globalThis.browser, "object", "browser facade is installed");
+    assertEqual(typeof browser.openOrReuseTab, "function", "browser.openOrReuseTab is installed");
+    assertEqual(typeof browser.closeTab, "function", "browser.closeTab is installed");
+    assertEqual(typeof globalThis.taskSpaces, "object", "taskSpaces facade is installed");
+    assertEqual(typeof taskSpaces.useOrCreate, "function", "taskSpaces.useOrCreate is installed");
+    assertEqual(typeof taskSpaces.claim, "function", "taskSpaces.claim is installed");
+    assertEqual(typeof globalThis.site, "object", "site facade is installed");
+    assertEqual(typeof site.runTool, "function", "site.runTool is installed");
+    assertEqual(typeof globalThis.fetch, "object", "fetch facade is installed");
+    assertEqual(typeof fetch.server, "function", "fetch.server is installed");
+    assertEqual(typeof fetch.browser, "function", "fetch.browser is installed");
+    assertEqual(typeof cdp, "function", "cdp escape hatch is installed");
+    assertEqual(typeof help, "function", "help is installed");
+    assertEqual(typeof globalThis.click, "undefined", "old click global is not exposed");
+    assertEqual(typeof globalThis.fill, "undefined", "old fill global is not exposed");
+    assertEqual(typeof globalThis.goto, "undefined", "old goto global is not exposed");
+    assertEqual(typeof globalThis.evaluate, "undefined", "old evaluate global is not exposed");
     assertEqual(typeof globalThis.newTab, "undefined", "internal newTab is not exposed");
     const helpText = help("missingHelperForE2E");
     assertIncludes(helpText, "Unknown helper", "help reports unknown helper names");
+    await page.getByText("Click counter").click();
+    assertEqual(await page.locator("#click-count").textContent(), "1", "getByText clicks visible text");
+    await page.getByLabel("Text input").fill("from label");
+    assertEqual(await page.locator("#text-input").inputValue(), "from label", "getByLabel targets the input");
+    await page.getByPlaceholder("Type text").fill("from placeholder");
+    assertEqual(await page.locator("#text-input").inputValue(), "from placeholder", "getByPlaceholder targets the input");
+    assertEqual(await page.getByAltText("Ego fixture logo").count(), 1, "getByAltText finds the image");
+    assertEqual(await page.getByTitle("Counter button").count(), 1, "getByTitle finds titled elements");
+    assertEqual(await page.locator("text=Download sample").count(), 1, "text= locator compatibility works"); // agent-style-ok: compatibility check
+    const extracted = await page.locator(".card").first().evaluateAll((cards) =>
+      cards.map((card) => ({
+        button: card.querySelector("#click-button")?.textContent?.trim() || null,
+        nav: card.querySelector("#nav-link")?.getAttribute("href") || null,
+        missing: card.querySelector(".does-not-exist")?.textContent?.trim() || null,
+      }))
+    );
+    assertEqual(extracted.length, 1, "evaluateAll returns one row for first card");
+    assertEqual(extracted[0].button, "Click counter", "evaluateAll reads nested text");
+    assertIncludes(extracted[0].nav, "/nav-target", "evaluateAll reads nested attributes");
+    assertEqual(extracted[0].missing, null, "evaluateAll returns null for missing nested selectors");
   `;
 }

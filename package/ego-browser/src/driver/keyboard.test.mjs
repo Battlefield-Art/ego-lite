@@ -2,7 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { setOverrides } from "../../dist/src/state.js";
-import { press } from "../../dist/src/driver/keyboard.js";
+import {
+  check,
+  down,
+  focus,
+  press,
+  pressOnSelector,
+  pressSequentially,
+  selectOption,
+  setChecked,
+  typeText,
+  uncheck,
+  up,
+} from "../../dist/src/driver/keyboard.js";
 
 test("press maps Command+A to the selectAll editing command", async () => {
   const calls = [];
@@ -76,6 +88,40 @@ test("press does not map modified Command+A variants to selectAll", async () => 
   }
 
   assert.equal(calls[0].params.commands, undefined);
+});
+
+test("down and up hold modifier state for subsequent presses", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      return {};
+    },
+  });
+  try {
+    await down("Shift");
+    await press("ArrowLeft");
+    await up("Shift");
+  } finally {
+    restore();
+  }
+
+  const keyEvents = calls.filter(
+    (entry) => entry.method === "Input.dispatchKeyEvent",
+  );
+  assert.deepEqual(
+    keyEvents.map((entry) => [
+      entry.params.type,
+      entry.params.key,
+      entry.params.modifiers,
+    ]),
+    [
+      ["keyDown", "Shift", 8],
+      ["keyDown", "ArrowLeft", 8],
+      ["keyUp", "ArrowLeft", 8],
+      ["keyUp", "Shift", 8],
+    ],
+  );
 });
 
 test("press parses a literal plus key with modifiers (Shift++)", async () => {
@@ -261,5 +307,197 @@ test("press skips probe fallback when CDP dispatch is trusted", async () => {
     evaluateExpressions[1],
     /probe\.seen/,
     "finish expression checks probe.seen flag",
+  );
+});
+
+function selectorCallHarness() {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      if (method === "Runtime.evaluate") {
+        return { result: { objectId: "object-1" } };
+      }
+      if (
+        method === "Runtime.callFunctionOn" &&
+        params.functionDeclaration.includes("return selected")
+      ) {
+        return { result: { value: ["b"] } };
+      }
+      return {};
+    },
+  });
+  return { calls, restore };
+}
+
+test("focus resolves a selector and focuses the element", async () => {
+  const { calls, restore } = selectorCallHarness();
+  try {
+    await focus("#name");
+  } finally {
+    restore();
+  }
+
+  const call = calls.find((entry) => entry.method === "Runtime.callFunctionOn");
+  assert.equal(call.params.objectId, "object-1");
+  assert.match(call.params.functionDeclaration, /this\.focus\(\)/);
+});
+
+test("setChecked, check, and uncheck use Playwright-style checked state", async () => {
+  const { calls, restore } = selectorCallHarness();
+  try {
+    await setChecked("#agree", true);
+    await check("#agree");
+    await uncheck("#agree");
+  } finally {
+    restore();
+  }
+
+  const callsOnElement = calls.filter(
+    (entry) => entry.method === "Runtime.callFunctionOn",
+  );
+  assert.equal(callsOnElement.length, 3);
+  assert.deepEqual(
+    callsOnElement.map((entry) => entry.params.arguments),
+    [[{ value: true }], [{ value: true }], [{ value: false }]],
+  );
+  assert.match(callsOnElement[0].params.functionDeclaration, /this\.checked/);
+});
+
+test("selectOption returns selected values", async () => {
+  const { calls, restore } = selectorCallHarness();
+  try {
+    assert.deepEqual(await selectOption("#choice", "b"), ["b"]);
+  } finally {
+    restore();
+  }
+
+  const call = calls.find((entry) => entry.method === "Runtime.callFunctionOn");
+  assert.deepEqual(call.params.arguments, [{ value: "b" }]);
+  assert.match(call.params.functionDeclaration, /HTMLSelectElement/);
+});
+
+test("setChecked rejects page-side validation errors", async () => {
+  const restore = setOverrides({
+    cdpOverride(method) {
+      if (method === "Runtime.evaluate") {
+        return { result: { objectId: "object-1" } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        return {
+          result: { subtype: "error", description: "Error: wrong target" },
+        };
+      }
+      return {};
+    },
+  });
+  try {
+    await assert.rejects(() => setChecked("#text", true), /wrong target/);
+  } finally {
+    restore();
+  }
+});
+
+test("pressSequentially focuses a selector then presses characters with delay", async () => {
+  const calls = [];
+  let now = 0;
+  const restore = setOverrides({
+    now: () => now,
+    sleep: async (ms) => {
+      now += ms;
+    },
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      if (method === "Runtime.evaluate") {
+        return { result: { objectId: "object-1", value: true } };
+      }
+      return {};
+    },
+  });
+  try {
+    await pressSequentially("#name", "ab", { delay: 5 });
+  } finally {
+    restore();
+  }
+
+  const keyDowns = calls.filter(
+    (entry) =>
+      entry.method === "Input.dispatchKeyEvent" &&
+      entry.params.type === "keyDown",
+  );
+  assert.deepEqual(
+    keyDowns.map((entry) => entry.params.key),
+    ["a", "b"],
+  );
+  assert.equal(now, 10);
+  assert(
+    calls.some(
+      (entry) =>
+        entry.method === "Runtime.callFunctionOn" &&
+        entry.params.functionDeclaration.includes("this.focus()"),
+    ),
+  );
+});
+
+test("typeText presses text without focusing a selector", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      return {};
+    },
+  });
+  try {
+    await typeText("ab");
+  } finally {
+    restore();
+  }
+
+  const keyDowns = calls.filter(
+    (entry) =>
+      entry.method === "Input.dispatchKeyEvent" &&
+      entry.params.type === "keyDown",
+  );
+  assert.deepEqual(
+    keyDowns.map((entry) => entry.params.key),
+    ["a", "b"],
+  );
+  assert.ok(
+    !calls.some((entry) => entry.method === "Runtime.callFunctionOn"),
+    "keyboard.type should not focus a selector",
+  );
+});
+
+test("pressOnSelector focuses a selector then presses a key", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      if (method === "Runtime.evaluate") {
+        return { result: { objectId: "object-1", value: true } };
+      }
+      return {};
+    },
+  });
+  try {
+    await pressOnSelector("#name", "Enter");
+  } finally {
+    restore();
+  }
+
+  assert(
+    calls.some(
+      (entry) =>
+        entry.method === "Runtime.callFunctionOn" &&
+        entry.params.functionDeclaration.includes("this.focus()"),
+    ),
+  );
+  assert(
+    calls.some(
+      (entry) =>
+        entry.method === "Input.dispatchKeyEvent" &&
+        entry.params.type === "keyDown" &&
+        entry.params.key === "Enter",
+    ),
   );
 });

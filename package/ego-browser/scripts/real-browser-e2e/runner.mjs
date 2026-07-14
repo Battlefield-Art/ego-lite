@@ -182,7 +182,7 @@ export async function runRealBrowserE2e() {
       "cleanup",
       `
         try {
-          const result = await completeTaskSpace(taskName, { keep: keepTaskSpace });
+          const result = await taskSpaces.complete(taskName, { keep: keepTaskSpace });
           console.log(JSON.stringify({ cleanup: result }));
         } catch (error) {
           if (!String(error?.message || error).includes("task space not found")) {

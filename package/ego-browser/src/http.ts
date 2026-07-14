@@ -1,5 +1,7 @@
 import { evaluate } from "./cdp-eval.js";
 
+const nativeFetch = globalThis.fetch?.bind(globalThis);
+
 /**
  * Fetch text from Node with a browser-like User-Agent.
  * @param {string} url URL to fetch.
@@ -7,8 +9,11 @@ import { evaluate } from "./cdp-eval.js";
  * @returns {Promise<string>} Response body text.
  */
 export async function serverFetch(url, options: any = {}) {
+  if (!nativeFetch) {
+    throw new Error("serverFetch requires globalThis.fetch");
+  }
   const { timeout = 20.0, headers = {}, ...fetchOptions } = options;
-  const response = await fetch(url, {
+  const response = await nativeFetch(url, {
     ...fetchOptions,
     headers: { "User-Agent": "Mozilla/5.0", ...headers },
     signal: AbortSignal.timeout(timeout * 1000),

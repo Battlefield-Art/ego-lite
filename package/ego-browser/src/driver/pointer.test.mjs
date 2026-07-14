@@ -2,7 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { setOverrides } from "../../dist/src/state.js";
-import { click, wheel } from "../../dist/src/driver/pointer.js";
+import {
+  click,
+  down,
+  hover,
+  up,
+  wheel,
+} from "../../dist/src/driver/pointer.js";
 
 function visibleAndFocused(value) {
   return (method, params) => {
@@ -43,8 +49,11 @@ test("click resolves selector offsets without the public elementEval helper", as
   }
 
   const callFunction = calls.find(
-    (call) => call.method === "Runtime.callFunctionOn",
+    (call) =>
+      call.method === "Runtime.callFunctionOn" &&
+      call.params.functionDeclaration.includes("getBoundingClientRect"),
   );
+  assert.ok(callFunction, "resolves the selector-relative bounding rect");
   assert.equal(callFunction.params.objectId, "object-1");
   assert.match(
     callFunction.params.functionDeclaration,
@@ -103,6 +112,41 @@ test("wheel defaults to scrolling down (positive deltaY) via CDP when visible an
     deltaX: 0,
     deltaY: 300,
   });
+});
+
+test("down and up use the current mouse position", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params, sessionId) {
+      calls.push({ method, params, sessionId });
+      return {};
+    },
+  });
+  try {
+    await hover([23, 45]);
+    await down();
+    await up();
+  } finally {
+    restore();
+  }
+
+  const mouseEvents = calls.filter(
+    (call) => call.method === "Input.dispatchMouseEvent",
+  );
+  assert.deepEqual(
+    mouseEvents.map((call) => ({
+      type: call.params.type,
+      x: call.params.x,
+      y: call.params.y,
+      button: call.params.button,
+      buttons: call.params.buttons,
+    })),
+    [
+      { type: "mouseMoved", x: 23, y: 45, button: undefined, buttons: 0 },
+      { type: "mousePressed", x: 23, y: 45, button: "left", buttons: 1 },
+      { type: "mouseReleased", x: 23, y: 45, button: "left", buttons: 0 },
+    ],
+  );
 });
 
 test("wheel forwards deltaX/deltaY and the viewport point to CDP", async () => {

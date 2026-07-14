@@ -41,8 +41,8 @@ Read the ego-browser skill for the default workflow and examples.
 
 Typical usage:
   ego-browser <<'JS'
-  await waitForLoadState()
-  console.log(await pageInfo())
+  await page.waitForLoadState()
+  console.log(await page.info())
   JS
 
 Helpers are pre-imported and the browser connection is prepared automatically.
@@ -54,7 +54,7 @@ Commands:
 
 export const USAGE = `Usage:
   ego-browser <<'JS'
-  console.log(await pageInfo())
+  console.log(await page.info())
   JS
 `;
 

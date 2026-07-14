@@ -34,6 +34,7 @@ export const state = {
   sessionAt: 0,
   sessionInflight: null,
   preferredTargetId: null,
+  defaultTimeout: 10000,
   // Last observed Network domain state on the default session (tracked in cdp()).
   networkDomainEnabled: false,
 };

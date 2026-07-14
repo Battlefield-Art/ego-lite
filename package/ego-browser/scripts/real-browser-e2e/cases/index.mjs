@@ -22,6 +22,7 @@ import { adversarialCases } from "./adversarial.mjs";
 import { workflowCases } from "./workflows.mjs";
 import { interactionsCases } from "./interactions.mjs";
 import { canvasCases } from "./canvas.mjs";
+import { downloadCases } from "./downloads.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -45,6 +46,7 @@ export const e2eCases = [
   { name: "runtime regression", body: runtimeRegressionCase },
   ...adversarialCases,
   ...workflowCases,
+  ...downloadCases,
   ...interactionsCases,
   ...canvasCases,
 ];

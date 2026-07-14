@@ -2,6 +2,7 @@ import { cdp, evaluate } from "../cdp-eval.js";
 import { browserCdp } from "../browser-runtime.js";
 import { elementCenter } from "./observe.js";
 import { resolveAndCall } from "./element-ops.js";
+import { waitForSelector } from "./waits.js";
 
 type MouseButton = "left" | "middle" | "right";
 type Point = {
@@ -18,14 +19,17 @@ type ClickOptions = {
   button?: MouseButton;
   clickCount?: number;
   label?: string;
+  timeout?: number;
 };
 type DragOptions = {
   button?: MouseButton;
   delay?: number;
   label?: string;
+  timeout?: number;
 };
 type HoverOptions = {
   label?: string;
+  timeout?: number;
 };
 type WheelOptions = {
   x?: number;
@@ -35,6 +39,7 @@ type MouseEventOptions = Record<string, unknown>;
 
 const INPUT_EVENT_DELAY_MS = 25;
 const INPUT_DISPATCH_TIMEOUT_MS = 1000;
+let currentMousePoint: Point = { x: 0, y: 0, sessionId: undefined };
 
 /**
  * Mouse target accepted by mouse helpers.
@@ -56,7 +61,8 @@ const INPUT_DISPATCH_TIMEOUT_MS = 1000;
  * @returns {Promise<void>}
  */
 export async function click(target: MouseTarget, options: ClickOptions = {}) {
-  const point = await resolveMouseTarget(target);
+  const point = await resolveMouseTarget(target, options.timeout);
+  rememberMousePoint(point);
   const button = options.button || "left";
   const buttons = pressedButtons(button);
   const clickCount = options.clickCount ?? 1;
@@ -108,7 +114,8 @@ export async function dblclick(
  * @returns {Promise<void>}
  */
 export async function hover(target: MouseTarget, options: HoverOptions = {}) {
-  const point = await resolveMouseTarget(target);
+  const point = await resolveMouseTarget(target, options.timeout);
+  rememberMousePoint(point);
   maybeHighlight(point, options.label);
   const probeId = await installHoverProbe(point);
   let dispatchError: unknown = null;
@@ -134,12 +141,15 @@ export async function drag(points: MouseTarget[], options: DragOptions = {}) {
   }
   const resolved: Point[] = [];
   for (const point of points) {
-    resolved.push(await resolveMouseTarget(point));
+    resolved.push(await resolveMouseTarget(point, options.timeout));
   }
   const button = options.button || "left";
   const buttons = pressedButtons(button);
   const first = resolved[0];
   const last = resolved.at(-1);
+  if (last) {
+    rememberMousePoint(last);
+  }
   maybeHighlight(first, options.label);
   const probeId = await installMouseUpProbe(last);
   let dispatchError: unknown = null;
@@ -177,6 +187,34 @@ export async function drag(points: MouseTarget[], options: DragOptions = {}) {
   }
   const completed = await finishDragProbe(resolved, probeId, button);
   if (dispatchError && !completed) throw dispatchError;
+}
+
+/**
+ * Press a mouse button at the current mouse position, Playwright-style.
+ * @param {{button?: "left"|"middle"|"right", clickCount?: number}} [options]
+ * @returns {Promise<void>}
+ */
+export async function down(options: ClickOptions = {}) {
+  const button = options.button || "left";
+  await dispatchMouse(currentMousePoint, "mousePressed", {
+    button,
+    buttons: pressedButtons(button),
+    clickCount: options.clickCount ?? 1,
+  });
+}
+
+/**
+ * Release a mouse button at the current mouse position, Playwright-style.
+ * @param {{button?: "left"|"middle"|"right", clickCount?: number}} [options]
+ * @returns {Promise<void>}
+ */
+export async function up(options: ClickOptions = {}) {
+  const button = options.button || "left";
+  await dispatchMouse(currentMousePoint, "mouseReleased", {
+    button,
+    buttons: 0,
+    clickCount: options.clickCount ?? 1,
+  });
 }
 
 function inputEventDelay(ms = INPUT_EVENT_DELAY_MS) {
@@ -534,6 +572,10 @@ function maybeHighlight(point: Point, label?: string) {
   }
 }
 
+function rememberMousePoint(point: Point) {
+  currentMousePoint = { ...point };
+}
+
 async function dispatchMouse(
   point: Point,
   type: string,
@@ -557,8 +599,12 @@ function isInputDispatchTimeout(error: unknown) {
   return /CDP request timed out: Input\.dispatchMouseEvent/.test(message);
 }
 
-async function resolveMouseTarget(target: MouseTarget): Promise<Point> {
+async function resolveMouseTarget(
+  target: MouseTarget,
+  timeout = undefined,
+): Promise<Point> {
   if (typeof target === "string") {
+    await waitForSelector(target, { timeout, state: "visible" });
     return elementCenter(target);
   }
   if (Array.isArray(target)) {
@@ -571,8 +617,10 @@ async function resolveMouseTarget(target: MouseTarget): Promise<Point> {
       target.selector
     ) {
       if (target.x === undefined && target.y === undefined) {
+        await waitForSelector(target.selector, { timeout, state: "visible" });
         return elementCenter(target.selector);
       }
+      await waitForSelector(target.selector, { timeout, state: "visible" });
       const [topLeft, center] = await Promise.all([
         elementTopLeft(target.selector),
         elementCenter(target.selector),

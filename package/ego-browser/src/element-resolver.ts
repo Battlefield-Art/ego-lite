@@ -1,4 +1,5 @@
 import { parseRef } from "./ref-map.js";
+import { queryAllExpression } from "./locator-query.js";
 
 export class ElementResolutionError extends Error {
   kind: "transient" | "permanent";
@@ -215,12 +216,21 @@ function resolveFrameSession(frameId, sessionId, iframeSessions) {
 
 async function resolveLocatorCenter(cdp, sessionId, locator) {
   if (locator.kind === "role") {
-    const backendNodeId = await findUniqueBackendNodeIdByRoleName(
-      cdp,
-      sessionId,
-      locator.role,
-      locator.name,
-    );
+    const backendNodeId =
+      locator.nth === undefined
+        ? await findUniqueBackendNodeIdByRoleName(
+            cdp,
+            sessionId,
+            locator.role,
+            locator.name,
+          )
+        : await findBackendNodeIdByRoleName(
+            cdp,
+            sessionId,
+            locator.role,
+            locator.name,
+            locator.nth,
+          );
     const result = await send(
       cdp,
       "DOM.getBoxModel",
@@ -260,12 +270,21 @@ async function resolveLocatorCenter(cdp, sessionId, locator) {
 
 async function resolveLocatorObjectId(cdp, sessionId, locator) {
   if (locator.kind === "role") {
-    const backendNodeId = await findUniqueBackendNodeIdByRoleName(
-      cdp,
-      sessionId,
-      locator.role,
-      locator.name,
-    );
+    const backendNodeId =
+      locator.nth === undefined
+        ? await findUniqueBackendNodeIdByRoleName(
+            cdp,
+            sessionId,
+            locator.role,
+            locator.name,
+          )
+        : await findBackendNodeIdByRoleName(
+            cdp,
+            sessionId,
+            locator.role,
+            locator.name,
+            locator.nth,
+          );
     const result = await send(
       cdp,
       "DOM.resolveNode",
@@ -288,7 +307,13 @@ async function resolveLocatorObjectId(cdp, sessionId, locator) {
       "transient",
     );
   }
-  if (count > 1) {
+  if (typeof locator.nth === "number" && count <= locator.nth) {
+    throw new ElementResolutionError(
+      `Locator ${locator.raw} matched 0 elements`,
+      "transient",
+    );
+  }
+  if (locator.nth === undefined && count > 1) {
     throw new ElementResolutionError(
       `Locator ${locator.raw} matched ${count} elements`,
       "permanent",
@@ -355,31 +380,35 @@ async function findBackendNodeIdByRoleName(
     params,
     effectiveSessionId,
   );
-  const nthIndex = nth ?? 0;
-  let matchCount = 0;
+  const matches = [];
   for (const node of result.nodes || []) {
     if (node.ignored) {
       continue;
     }
+    if (extractAxString(node.role) !== role) {
+      continue;
+    }
     if (
-      extractAxString(node.role) !== role ||
-      extractAxString(node.name) !== name
+      name !== undefined &&
+      !axNameMatches(extractAxString(node.name), name)
     ) {
       continue;
     }
-    if (matchCount === nthIndex) {
-      if (
-        node.backendDOMNodeId === undefined ||
-        node.backendDOMNodeId === null
-      ) {
-        throw new ElementResolutionError(
-          `AX node has no backendDOMNodeId for role=${role} name=${name}`,
-          "permanent",
-        );
-      }
-      return node.backendDOMNodeId;
+    matches.push(node);
+  }
+  const nthIndex = nth === "last" ? matches.length - 1 : (nth ?? 0);
+  const match = matches[nthIndex];
+  if (match) {
+    if (
+      match.backendDOMNodeId === undefined ||
+      match.backendDOMNodeId === null
+    ) {
+      throw new ElementResolutionError(
+        `AX node has no backendDOMNodeId for role=${role} name=${name}`,
+        "permanent",
+      );
     }
-    matchCount += 1;
+    return match.backendDOMNodeId;
   }
   throw new ElementResolutionError(
     `Could not locate element with role=${role} name=${name}`,
@@ -396,7 +425,7 @@ async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
     }
     if (
       extractAxString(node.role) === role &&
-      extractAxString(node.name) === name
+      (name === undefined || axNameMatches(extractAxString(node.name), name))
     ) {
       matches.push(node);
     }
@@ -441,24 +470,82 @@ function buildFindElementJs(selector) {
   if (String(selector).startsWith("xpath=")) {
     return `document.evaluate(${JSON.stringify(String(selector).slice(6))}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`;
   }
-  return `document.querySelector(${JSON.stringify(selector)})`;
+  return `(() => ${queryAllExpression(selector)}[0] || null)()`;
 }
 
 function buildLocatorFindJs(locator) {
-  if (locator.kind === "css") {
-    return `document.querySelector(${JSON.stringify(locator.selector)})`;
+  if (locator.kind === "query") {
+    return `(() => {
+      const elements = ${queryAllExpression(locator.selector)};
+      return elements[${locator.nth === "last" ? "elements.length - 1" : JSON.stringify(locator.nth ?? 0)}] || null;
+    })()`;
   }
-  return `(() => ${hrefElementsJs(locator.href)}[0] || null)()`;
+  if (locator.kind === "css") {
+    const selector = `loc=css:${locator.selector}`;
+    if (locator.nth !== undefined) {
+      return `(() => {
+        const elements = ${queryAllExpression(selector)};
+        return elements[${locator.nth === "last" ? "elements.length - 1" : JSON.stringify(locator.nth)}] || null;
+      })()`;
+    }
+    return `(() => ${queryAllExpression(selector)}[0] || null)()`;
+  }
+  if (locator.kind === "xpath") {
+    return `(() => {
+      const snapshot = document.evaluate(${JSON.stringify(locator.xpath)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      return snapshot.snapshotItem(${locator.nth === "last" ? "snapshot.snapshotLength - 1" : JSON.stringify(locator.nth ?? 0)});
+    })()`;
+  }
+  if (
+    locator.kind === "text" ||
+    locator.kind === "label" ||
+    locator.kind === "placeholder" ||
+    locator.kind === "alt" ||
+    locator.kind === "title" ||
+    locator.kind === "testid"
+  ) {
+    return `(() => {
+      const elements = ${buildLocatorAllJs(locator)};
+      return elements[${locator.nth === "last" ? "elements.length - 1" : JSON.stringify(locator.nth ?? 0)}] || null;
+    })()`;
+  }
+  return locator.nth === "last"
+    ? `(() => ${hrefElementsJs(locator.href)}.at(-1) || null)()`
+    : `(() => ${hrefElementsJs(locator.href)}[${JSON.stringify(locator.nth ?? 0)}] || null)()`;
 }
 
 function buildLocatorCountJs(locator) {
+  if (locator.kind === "query") {
+    return `(() => ${queryAllExpression(locator.selector)}.length)()`;
+  }
   if (locator.kind === "css") {
-    return `document.querySelectorAll(${JSON.stringify(locator.selector)}).length`;
+    return `(() => ${queryAllExpression(`loc=css:${locator.selector}`)}.length)()`;
+  }
+  if (locator.kind === "xpath") {
+    return `(() => document.evaluate(${JSON.stringify(locator.xpath)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotLength)()`;
+  }
+  if (
+    locator.kind === "text" ||
+    locator.kind === "label" ||
+    locator.kind === "placeholder" ||
+    locator.kind === "alt" ||
+    locator.kind === "title" ||
+    locator.kind === "testid"
+  ) {
+    return `(() => ${buildLocatorAllJs(locator)}.length)()`;
   }
   return `(() => ${hrefElementsJs(locator.href)}.length)()`;
 }
 
 function buildLocatorCenterJs(locator) {
+  if (locator.nth !== undefined) {
+    return `(() => {
+            const el = ${buildLocatorFindJs(locator)};
+            if (!el) return { error: ${JSON.stringify(`Locator ${locator.raw} matched 0 elements`)} };
+            const rect = el.getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        })()`;
+  }
   return `(() => {
             const count = ${buildLocatorCountJs(locator)};
             if (count !== 1) return { error: ${JSON.stringify(`Locator ${locator.raw} matched`)} + ' ' + count + ' elements' };
@@ -481,6 +568,101 @@ function hrefElementsJs(href) {
           })`;
 }
 
+function buildLocatorAllJs(locator) {
+  if (locator.kind === "text") {
+    return textElementsJs(locator);
+  }
+  if (locator.kind === "label") {
+    return labelElementsJs(locator);
+  }
+  if (locator.kind === "placeholder") {
+    return attributeElementsJs(
+      "input[placeholder], textarea[placeholder]",
+      "placeholder",
+      locator,
+    );
+  }
+  if (locator.kind === "alt") {
+    return attributeElementsJs("img[alt], input[alt]", "alt", locator);
+  }
+  if (locator.kind === "title") {
+    return attributeElementsJs("[title]", "title", locator);
+  }
+  if (locator.kind === "testid") {
+    return attributeElementsJs("[data-testid]", "data-testid", locator);
+  }
+  throw new Error(`unsupported locator kind: ${locator.kind}`);
+}
+
+function textElementsJs(locator) {
+  const match = textMatchJs(
+    "el.innerText || el.textContent",
+    locator.text,
+    locator.exact,
+  );
+  const childMatch = textMatchJs(
+    "child.innerText || child.textContent",
+    locator.text,
+    locator.exact,
+  );
+  return `Array.from(document.querySelectorAll('body *')).filter((el) => {
+            if (!(${match})) return false;
+            return !Array.from(el.children || []).some((child) => ${childMatch});
+          })`;
+}
+
+function labelElementsJs(locator) {
+  const labelMatch = textMatchJs(
+    "label.innerText || label.textContent",
+    locator.text,
+    locator.exact,
+  );
+  const ariaMatch = textMatchJs(
+    "el.getAttribute('aria-label')",
+    locator.text,
+    locator.exact,
+  );
+  const labelledByMatch = textMatchJs(
+    "labelledBy",
+    locator.text,
+    locator.exact,
+  );
+  return `(() => {
+            const controls = [];
+            for (const label of document.querySelectorAll('label')) {
+              if (!(${labelMatch})) continue;
+              const control = label.control || (label.getAttribute('for') ? document.getElementById(label.getAttribute('for')) : null);
+              if (control) controls.push(control);
+            }
+            for (const el of document.querySelectorAll('input, textarea, select, button, [role]')) {
+              if (el.getAttribute('aria-label') && ${ariaMatch}) controls.push(el);
+              const ids = (el.getAttribute('aria-labelledby') || '').split(/\\s+/).filter(Boolean);
+              if (ids.length) {
+                const labelledBy = ids.map((id) => document.getElementById(id)?.textContent || '').join(' ');
+                if (${labelledByMatch}) controls.push(el);
+              }
+            }
+            return Array.from(new Set(controls));
+          })()`;
+}
+
+function attributeElementsJs(selector, attribute, locator) {
+  const match = textMatchJs(
+    `el.getAttribute(${JSON.stringify(attribute)})`,
+    locator.text,
+    locator.exact,
+  );
+  return `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).filter((el) => ${match})`;
+}
+
+function textMatchJs(valueExpression, text, exact) {
+  const needle = JSON.stringify(String(text).replace(/\s+/g, " ").trim());
+  const normalized = `String(${valueExpression} || '').replace(/\\s+/g, ' ').trim()`;
+  return exact
+    ? `${normalized} === ${needle}`
+    : `${normalized}.includes(${needle})`;
+}
+
 function buildSelectorCenterJs(selector) {
   const findExpr = buildFindElementJs(selector);
   return `(() => {
@@ -493,25 +675,107 @@ function buildSelectorCenterJs(selector) {
 
 function parseLocator(input) {
   let value = String(input || "").trim();
+  let nth: number | undefined;
+  const nthMatch = /^internal:nth=(\d+);([\s\S]+)$/.exec(value);
+  if (nthMatch) {
+    nth = Number(nthMatch[1]);
+    value = nthMatch[2];
+  }
+  const lastMatch = /^internal:last;([\s\S]+)$/.exec(value);
+  if (lastMatch) {
+    nth = "last" as any;
+    value = lastMatch[1];
+  }
+  if (
+    value.startsWith("internal:scope:") ||
+    value.startsWith("internal:filter:")
+  ) {
+    return { kind: "query", selector: value, raw: value, nth };
+  }
   if (value.startsWith("loc=")) {
     value = value.slice(4);
   }
   if (value.startsWith("css:")) {
     const selector = value.slice(4);
-    return selector ? { kind: "css", selector, raw: value } : null;
+    return selector ? { kind: "css", selector, raw: value, nth } : null;
   }
   if (value.startsWith("href:")) {
     const href = value.slice(5);
-    return href ? { kind: "href", href, raw: value } : null;
+    return href ? { kind: "href", href, raw: value, nth } : null;
   }
-  const roleMatch = /^role:([A-Za-z0-9_-]+)\[name=(.+)\]$/.exec(value);
+  if (value.startsWith("text:")) {
+    return {
+      kind: "text",
+      ...parseTextLocator(value.slice(5)),
+      raw: value,
+      nth,
+    };
+  }
+  if (value.startsWith("text=")) {
+    return {
+      kind: "text",
+      text: value.slice(5),
+      exact: false,
+      raw: value,
+      nth,
+    };
+  }
+  if (value.startsWith("label:")) {
+    return {
+      kind: "label",
+      ...parseTextLocator(value.slice(6)),
+      raw: value,
+      nth,
+    };
+  }
+  if (value.startsWith("placeholder:")) {
+    return {
+      kind: "placeholder",
+      ...parseTextLocator(value.slice(12)),
+      raw: value,
+      nth,
+    };
+  }
+  if (value.startsWith("alt:")) {
+    return {
+      kind: "alt",
+      ...parseTextLocator(value.slice(4)),
+      raw: value,
+      nth,
+    };
+  }
+  if (value.startsWith("title:")) {
+    return {
+      kind: "title",
+      ...parseTextLocator(value.slice(6)),
+      raw: value,
+      nth,
+    };
+  }
+  if (value.startsWith("testid:")) {
+    return {
+      kind: "testid",
+      ...parseTextLocator(value.slice(7)),
+      raw: value,
+      nth,
+    };
+  }
+  const roleMatch = /^role:([A-Za-z0-9_-]+)(?:\[name=(.+)\])?$/.exec(value);
   if (roleMatch) {
     return {
       kind: "role",
       role: roleMatch[1],
-      name: parseLocatorName(roleMatch[2]),
+      name:
+        roleMatch[2] === undefined ? undefined : parseLocatorName(roleMatch[2]),
       raw: value,
+      nth,
     };
+  }
+  if (nth !== undefined) {
+    if (value.startsWith("xpath=")) {
+      return { kind: "xpath", xpath: value.slice(6), raw: value, nth };
+    }
+    return { kind: "css", selector: value, raw: value, nth };
   }
   return null;
 }
@@ -528,7 +792,24 @@ function parseLocatorName(raw) {
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
     return trimmed.slice(1, -1);
   }
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (isTextMatcher(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return trimmed;
+    }
+  }
   return trimmed;
+}
+
+function parseTextLocator(raw) {
+  if (raw.startsWith("exact:")) {
+    return { text: parseLocatorName(raw.slice(6)), exact: true };
+  }
+  return { text: parseLocatorName(raw), exact: false };
 }
 
 function boxModelCenter(model: any = {}) {
@@ -557,6 +838,36 @@ function extractAxString(value) {
     return String(raw);
   }
   return "";
+}
+
+function axNameMatches(actual, expected) {
+  if (isTextMatcher(expected)) {
+    if (typeof expected.regex === "string") {
+      try {
+        return new RegExp(expected.regex, expected.flags || "").test(
+          String(actual),
+        );
+      } catch {
+        return false;
+      }
+    }
+    const text = String(expected.text ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const normalized = String(actual || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return expected.exact ? normalized === text : normalized.includes(text);
+  }
+  return String(actual) === String(expected);
+}
+
+function isTextMatcher(value) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    (typeof value.regex === "string" || typeof value.text === "string"),
+  );
 }
 
 function send(cdp, method, params: any = {}, sessionId = undefined) {
