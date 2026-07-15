@@ -272,6 +272,12 @@ Before writing substantial content into a rich editor, perform a tiny write prob
 
 These workflows can be combined. A task may take multiple heredoc rounds when the next step depends on fresh page state or user handoff. In each round, write a coherent script that advances the task: observe, act or extract, verify, and report with `console.log(...)`. Avoid tiny probe scripts, but don't force the whole task into one oversized script.
 
+## Update notices
+
+- A trailing `[ego-browser:notice]` line means an ego lite update is available/required — it is an out-of-band hint appended after the command's own output, not an error or part of the result. Do not act on it mid-task; keep working toward the user's goal.
+- Once the current browser task stops or completes (including right before/after `taskSpaces.complete`), tell the user about the update: the notice line, and the current version shown in the notice. Proactively offer to run the upgrade — mention that it updates the ego lite browser, the CLI, and the Skills together, not just the app.
+- If the user agrees, run `ego-browser upgrade` in the shell. After the upgrade finishes, re-read the `ego-browser` skill (this file) before continuing, since the upgrade may have changed its content.
+
 ## Caveats
 
 - Time values are in **milliseconds** (Playwright-style): `page.waitForTimeout(ms)`, `page.setDefaultTimeout(ms)`, the `timeout` on `page.locator(...).click` / `page.locator(...).fill` / `page.locator(...).press` / `page.waitForEvent` / `page.waitForLoadState` / `page.waitForSelector` / `page.waitForFunction` / `page.waitForURL` / `page.waitForRequest` / `page.waitForResponse`, and `timeout` / `settle` on `page.goto` / `browser.openOrReuseTab`. Exceptions still in **seconds**: `fetch.server` / `fetch.browser` `timeout`, and `taskSpaces.waitForAgentControl` `interval` / `timeout`.
@@ -285,4 +291,3 @@ These workflows can be combined. A task may take multiple heredoc rounds when th
 - Always call `taskSpaces.complete(name, { keep })` when the task is done — do not leave the space hanging. Default to `{ keep: false }`; use `{ keep: true }` only for the concrete live-page cases described in Task spaces.
 - When the user explicitly asks to use ego-browser, assume both `ego-browser` and the repo runtime are ready. Do not pre-check `which ego-browser`, `node -v`, package metadata, or help output. Only investigate environment issues if the first run produces an error.
 - If the first run reports `command not found` / a missing environment (most likely ego lite isn't installed yet), or the user explicitly asks to install ego lite, first read `references/install.md` and follow its flow to complete the install, then return to the original task — do not give up, and do not keep retrying the same heredoc.
-- A trailing `[ego-browser:notice]` line means an ego lite update is available/required — it is an out-of-band hint appended after the command's own output, not an error or part of the result. Do not act on it mid-task; keep working toward the user's goal. Once the current browser task stops or completes (including right before/after `taskSpaces.complete`), tell the user about the update and ask whether they want to run `ego-browser upgrade` and restart ego lite now.
