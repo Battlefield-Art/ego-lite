@@ -25,6 +25,7 @@ import { interactionsCases } from "./interactions.mjs";
 import { canvasCases } from "./canvas.mjs";
 import { downloadCases } from "./downloads.mjs";
 import { playwrightUrlWaitCases } from "./playwright-url-waits.mjs";
+import { playwrightPageUrlCases } from "./playwright-page-url.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -56,4 +57,5 @@ export const e2eCases = [
   ...interactionsCases,
   ...canvasCases,
   ...playwrightUrlWaitCases,
+  ...playwrightPageUrlCases,
 ];

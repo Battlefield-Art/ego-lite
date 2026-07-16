@@ -1,4 +1,4 @@
-import { state } from "./state.js";
+import { cachePageUrl, clearPageUrl, state } from "./state.js";
 import { assertNoEgoError, buildEgoError } from "./ego-errors.js";
 
 const RESPONSE_TIMEOUT_MS = 15000;
@@ -118,6 +118,9 @@ export async function ensureSession() {
         throw new Error("no active tab to attach session");
       }
       const targetId = active.targetId;
+      if (typeof active.url === "string") {
+        cachePageUrl(active.url, targetId);
+      }
       if (targetId !== state.sessionTargetId || !state.sessionId) {
         const attached = await rawCdp(
           "Target.attachToTarget",
@@ -243,8 +246,44 @@ function handleMessage(message) {
       pendingDialogs.delete(sessionId);
     }
     const targetId = data.params?.targetId || data.params?.targetInfo?.targetId;
+    if (targetId && targetId === state.pageUrlTargetId) {
+      clearPageUrl(targetId);
+    }
     if (targetId && targetId === state.sessionTargetId) {
       invalidateSession();
+    }
+  }
+  if (data.method === "Target.targetInfoChanged") {
+    const targetInfo = data.params?.targetInfo;
+    const currentTargetId =
+      state.preferredTargetId || state.sessionTargetId || state.pageUrlTargetId;
+    if (
+      targetInfo?.targetId === currentTargetId &&
+      typeof targetInfo.url === "string"
+    ) {
+      cachePageUrl(targetInfo.url, targetInfo.targetId);
+    }
+  }
+  if (
+    data.method === "Page.frameNavigated" &&
+    (!data.sessionId || data.sessionId === state.sessionId)
+  ) {
+    const frame = data.params?.frame;
+    if (frame && !frame.parentId && typeof frame.url === "string") {
+      state.pageMainFrameId = frame.id || null;
+      cachePageUrl(frame.url, state.sessionTargetId);
+    }
+  } else if (
+    data.method === "Page.navigatedWithinDocument" &&
+    (!data.sessionId || data.sessionId === state.sessionId)
+  ) {
+    const frameId = data.params?.frameId;
+    if (
+      typeof data.params?.url === "string" &&
+      (!state.pageMainFrameId || frameId === state.pageMainFrameId)
+    ) {
+      state.pageMainFrameId = frameId || state.pageMainFrameId;
+      cachePageUrl(data.params.url, state.sessionTargetId);
     }
   }
   if (data.method === "Page.javascriptDialogOpening") {

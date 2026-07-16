@@ -9,7 +9,7 @@ import {
 } from "../browser-runtime.js";
 import { cdp, evaluate } from "../cdp-eval.js";
 import { assertNoEgoError } from "../ego-errors.js";
-import { state } from "../state.js";
+import { cachePageUrl, state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
 
 export const INTERNAL_URL_PREFIXES = [
@@ -59,6 +59,7 @@ type TabTarget = string | { targetId: string };
  */
 export async function goto(url: string, options: GotoOptions = {}) {
   const navigation = await cdp("Page.navigate", { url });
+  cachePageUrl(url);
   const loaded =
     options.waitUntil === "commit"
       ? false
@@ -131,6 +132,7 @@ export async function currentTab() {
   if (!active) {
     throw new Error("no active browser tab");
   }
+  cachePageUrl(active.url, active.targetId);
   return { targetId: active.targetId, url: active.url, title: active.title };
 }
 
@@ -185,6 +187,7 @@ export async function openOrReuseTab(
     return { ...existing, active: true, reused: true };
   }
   const targetId = await newTab(url);
+  cachePageUrl(url, targetId);
   if (options.wait !== false) {
     await waitForDocumentLoad({ timeout: options.timeout ?? 20000 });
   }

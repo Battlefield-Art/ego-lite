@@ -41,6 +41,15 @@ test("formatCliLogValue renders documented function properties in object output"
   assert.equal(parsed.helpers.site.runTool.params[0].name, "siteId");
 });
 
+test("formatCliLogValue documents page.url as synchronous", () => {
+  const formatted = formatCliLogValue({
+    helpers: { page: { url() {} } },
+  });
+
+  const parsed = JSON.parse(formatted);
+  assert.equal(parsed.helpers.page.url.signature, "page.url() => string");
+});
+
 test("formatCliLogValue documents ego.learnings as the site facade alias", () => {
   const formatted = formatCliLogValue({
     learnings: {

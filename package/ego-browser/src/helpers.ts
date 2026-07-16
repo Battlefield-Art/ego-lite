@@ -701,7 +701,7 @@ function createPageFacade() {
       });
     },
     info: nav.pageInfo,
-    url: async () => (await nav.pageInfo()).url,
+    url: () => state.pageUrl,
     title: async () => (await nav.pageInfo()).title,
     locator: createLocator,
     getByRole: (role, options: any = {}) => {
@@ -801,7 +801,7 @@ function createSiteFacade() {
 }
 
 const FACADE_HELP: Record<string, string> = {
-  page: 'page: Playwright-style page facade. Use page.goto(url), page.locator(selector), page.getByText(text), page.getByLabel(text), page.getByPlaceholder(text), page.getByTestId(testId), page.setDefaultTimeout(ms), page.waitForEvent("download"), page.waitForLoadState(state, options), page.waitForURL(url, options), page.waitForRequest(urlOrPredicate, options), page.waitForResponse(urlOrPredicate, options), page.evaluate(expression), page.screenshot(options), page.keyboard.press(key), page.keyboard.type(text), and page.mouse.click(x, y).',
+  page: 'page: Playwright-style page facade. page.url() synchronously returns the latest browser-confirmed URL. Use page.goto(url), page.locator(selector), page.getByText(text), page.getByLabel(text), page.getByPlaceholder(text), page.getByTestId(testId), page.setDefaultTimeout(ms), page.waitForEvent("download"), page.waitForLoadState(state, options), page.waitForURL(url, options), page.waitForRequest(urlOrPredicate, options), page.waitForResponse(urlOrPredicate, options), page.evaluate(expression), page.screenshot(options), page.keyboard.press(key), page.keyboard.type(text), and page.mouse.click(x, y). waitForURL predicates receive URL objects and waitUntil defaults to load.',
   locator:
     "page.locator(selector): returns a locator facade with locator(), getByRole(), getByText(), filter(), first(), nth(index), last(), click(), fill(value), clear(), press(key), check(), selectOption(value), textContent(), innerText(), innerHTML(), isVisible(), isEnabled(), getAttribute(name), screenshot(), count(), evaluate(fn, arg), evaluateAll(fn, arg), and waitFor(options).",
   browser:

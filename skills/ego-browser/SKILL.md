@@ -79,6 +79,7 @@ await page.waitForURL(
 - `await fetch.server(url, options)` — issues a request from Node and returns the response body.
 - `await fetch.browser(url, options)` — issues a request from the current browser page context and returns the response body.
 - `help(name)` — prints usage for a facade, e.g. `console.log(help('page'))` or `console.log(help('locator'))`.
+- `page.url()` — synchronously returns the latest browser-confirmed URL string, matching Playwright's call shape. In a fresh heredoc, first select the task space and await a tab/navigation helper such as `browser.currentTab()`, `browser.switchTab(...)`, `browser.openOrReuseTab(...)`, or `page.goto(...)` so the current-tab projection is initialized.
 
 ### Task spaces
 

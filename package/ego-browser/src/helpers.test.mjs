@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import * as helperExports from "../dist/src/helpers.js";
+import { state } from "../dist/src/state.js";
 import {
   claimTaskSpace,
   completeTaskSpace,
@@ -218,6 +219,18 @@ test("helper surface exposes Playwright-style object facades", () => {
   assert.equal("newTab" in context, false);
   assert.equal("elementEval" in helperExports, false);
   assert.equal("elementEval" in context, false);
+});
+
+test("page.url returns the cached current URL synchronously", () => {
+  const previousUrl = state.pageUrl;
+  state.pageUrl = "https://example.com/current";
+  try {
+    const value = helperContext().page.url();
+    assert.equal(typeof value, "string");
+    assert.equal(value, "https://example.com/current");
+  } finally {
+    state.pageUrl = previousUrl;
+  }
 });
 
 test("switchTaskSpace selects a matching task space", async () => {

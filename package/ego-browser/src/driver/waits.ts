@@ -1,4 +1,4 @@
-import { state } from "../state.js";
+import { cachePageUrl, state } from "../state.js";
 import { cdp, runtimeValue } from "../cdp-eval.js";
 import { resolveHandle, releaseHandle } from "./element-ops.js";
 import { ElementResolutionError } from "../element-resolver.js";
@@ -100,6 +100,7 @@ export async function waitForURL(url, options: WaitForURLOptions = {}) {
       }),
       "location.href",
     );
+    cachePageUrl(current);
     if (urlMatches(current, url)) {
       const waitUntil = options.waitUntil ?? "load";
       return waitUntil === "commit"

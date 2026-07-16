@@ -70,10 +70,11 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
     example: "console.log(await page.info())",
   },
   "page.url": {
-    signature: "page.url() => Promise<string>",
-    description: "Return the current page URL.",
-    returns: "Promise<string>",
-    example: "console.log(await page.url())",
+    signature: "page.url() => string",
+    description:
+      "Synchronously return the latest browser-confirmed URL for the current page.",
+    returns: "string",
+    example: "console.log(page.url())",
   },
   "page.title": {
     signature: "page.title() => Promise<string>",
