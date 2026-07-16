@@ -171,6 +171,20 @@ export async function startFixtureServer(taskName) {
       res.end(pageHtml("nav-target"));
       return;
     }
+    if (url.pathname === "/regression/slow-document") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      res.writeHead(200, {
+        "content-type": "text/html",
+        "cache-control": "no-store",
+      });
+      res.flushHeaders?.();
+      setTimeout(() => {
+        res.end(
+          "<!doctype html><html><head><title>slow document regression</title></head><body><h1>Ready</h1></body></html>",
+        );
+      }, delayMs);
+      return;
+    }
     if (url.pathname === "/secondary") {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(pageHtml("secondary"));

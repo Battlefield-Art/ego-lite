@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 
 import {
   browserCdp,
@@ -295,4 +296,38 @@ test("pageInfo returns pending dialog without evaluating frozen page JavaScript"
       false,
     );
   });
+});
+
+test("pageInfo tolerates a transient document without documentElement", async () => {
+  const restore = setOverrides({
+    cdpOverride: async (method, params) => {
+      assert.equal(method, "Runtime.evaluate");
+      const value = runInNewContext(params.expression, {
+        document: {
+          documentElement: null,
+          title: "Loading",
+        },
+        innerHeight: 600,
+        innerWidth: 800,
+        location: { href: "https://example.com/loading" },
+        scrollX: 0,
+        scrollY: 0,
+      });
+      return { result: { value } };
+    },
+  });
+  try {
+    assert.deepEqual(await pageInfo(), {
+      url: "https://example.com/loading",
+      title: "Loading",
+      w: 800,
+      h: 600,
+      sx: 0,
+      sy: 0,
+      pw: 800,
+      ph: 600,
+    });
+  } finally {
+    restore();
+  }
 });

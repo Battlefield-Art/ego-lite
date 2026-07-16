@@ -89,9 +89,22 @@ export async function pageInfo() {
       return { dialog };
     }
   }
-  const expression =
-    "JSON.stringify({url:location.href,title:document.title,w:innerWidth,h:innerHeight,sx:scrollX,sy:scrollY,pw:document.documentElement.scrollWidth,ph:document.documentElement.scrollHeight})";
-  return JSON.parse(await evaluate(expression));
+  const expression = `(() => {
+    const root = document.documentElement;
+    return JSON.stringify({
+      url: location.href,
+      title: document.title,
+      w: innerWidth,
+      h: innerHeight,
+      sx: scrollX,
+      sy: scrollY,
+      pw: root?.scrollWidth ?? innerWidth,
+      ph: root?.scrollHeight ?? innerHeight,
+    });
+  })()`;
+  const info = JSON.parse(await evaluate(expression));
+  cachePageUrl(info.url);
+  return info;
 }
 
 /**
