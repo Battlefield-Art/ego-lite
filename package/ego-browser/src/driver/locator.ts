@@ -5,6 +5,7 @@ import {
 } from "../element-resolver.js";
 import { queryAllExpression as buildQueryAllExpression } from "../locator-query.js";
 import { parseRef } from "../ref-map.js";
+import { state } from "../state.js";
 import { releaseHandle, resolveAndCall, resolveHandle } from "./element-ops.js";
 
 /**
@@ -301,6 +302,24 @@ export async function evaluateAll(selector, pageFunction, arg = undefined) {
 }
 
 async function readElement(selector, functionDeclaration, args = []) {
+  const deadline = state.now() + state.defaultTimeout;
+  while (true) {
+    try {
+      return await readElementOnce(selector, functionDeclaration, args);
+    } catch (error) {
+      if (
+        !(error instanceof ElementResolutionError) ||
+        error.kind !== "transient" ||
+        state.now() >= deadline
+      ) {
+        throw error;
+      }
+      await state.sleep(Math.min(100, deadline - state.now()));
+    }
+  }
+}
+
+async function readElementOnce(selector, functionDeclaration, args = []) {
   const { result } = await resolveAndCall(selector, functionDeclaration, args);
   return runtimeValue(result, functionDeclaration);
 }
@@ -312,7 +331,7 @@ async function readOptionalElement(
   fallback,
 ) {
   try {
-    return await readElement(selector, functionDeclaration, args);
+    return await readElementOnce(selector, functionDeclaration, args);
   } catch (error) {
     if (error instanceof ElementResolutionError && error.kind === "transient") {
       return fallback;

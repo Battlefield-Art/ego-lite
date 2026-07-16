@@ -63,6 +63,40 @@ test("locator read helpers call a resolved element", async () => {
   );
 });
 
+test("required locator reads retry transient zero matches", async () => {
+  let attempts = 0;
+  let now = 0;
+  const sleeps = [];
+  const restore = setOverrides({
+    defaultTimeout: 500,
+    now: () => now,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      now += ms;
+    },
+    cdpOverride(method) {
+      if (method === "Runtime.evaluate") {
+        attempts += 1;
+        return attempts < 3
+          ? { result: {} }
+          : { result: { objectId: "node-delayed" } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        return { result: { value: "delayed content" } };
+      }
+      return {};
+    },
+  });
+  try {
+    assert.equal(await textContent("#delayed-content"), "delayed content");
+  } finally {
+    restore();
+  }
+
+  assert.equal(attempts, 3);
+  assert.deepEqual(sleeps, [100, 100]);
+});
+
 test("locator collection helpers evaluate all matching nodes", async () => {
   const restore = setOverrides({
     cdpOverride(method, params) {

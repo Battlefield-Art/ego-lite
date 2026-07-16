@@ -27,6 +27,7 @@ import { downloadCases } from "./downloads.mjs";
 import { playwrightUrlWaitCases } from "./playwright-url-waits.mjs";
 import { playwrightPageUrlCases } from "./playwright-page-url.mjs";
 import { playwrightPageInfoCases } from "./playwright-page-info.mjs";
+import { playwrightLocatorCases } from "./playwright-locators.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -60,4 +61,5 @@ export const e2eCases = [
   ...playwrightUrlWaitCases,
   ...playwrightPageUrlCases,
   ...playwrightPageInfoCases,
+  ...playwrightLocatorCases,
 ];
