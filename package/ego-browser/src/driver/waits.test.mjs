@@ -103,11 +103,92 @@ test("waitForURL supports Playwright-style glob strings", async () => {
     },
   });
   try {
-    assert.equal(await waitForURL("**/target", { timeout: 500 }), true);
+    assert.equal(
+      await waitForURL("**/target", {
+        timeout: 500,
+        waitUntil: "commit",
+      }),
+      true,
+    );
   } finally {
     restore();
   }
   assert.deepEqual(sleeps, [100]);
+});
+
+test("waitForURL predicates receive URL objects and wait for load by default", async () => {
+  const calls = [];
+  let observedUrl;
+  const restore = setOverrides({
+    cdpOverride: async (method, params) => {
+      calls.push({ method, params });
+      if (method === "Page.getFrameTree") {
+        return {
+          frameTree: {
+            frame: { url: "https://example.com/target" },
+          },
+        };
+      }
+      if (method === "Runtime.evaluate") {
+        if (params.expression === "location.href") {
+          return {
+            result: { value: "https://example.com/target" },
+          };
+        }
+        if (params.expression === "document.readyState") {
+          return { result: { value: "complete" } };
+        }
+      }
+      throw new Error(`unexpected CDP call: ${method}`);
+    },
+  });
+  try {
+    assert.equal(
+      await waitForURL((url) => {
+        observedUrl = url;
+        return url.pathname === "/target";
+      }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+
+  assert(observedUrl instanceof URL);
+  assert.equal(observedUrl.href, "https://example.com/target");
+  assert.ok(
+    calls.some(
+      ({ method, params }) =>
+        method === "Runtime.evaluate" &&
+        params.expression === "document.readyState",
+    ),
+    "default waitForURL waits for the load state after the URL matches",
+  );
+});
+
+test("waitForURL waitUntil commit returns without waiting for load", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride: async (method, params) => {
+      calls.push({ method, params });
+      return { result: { value: "https://example.com/target" } };
+    },
+  });
+  try {
+    assert.equal(
+      await waitForURL("https://example.com/target", {
+        waitUntil: "commit",
+      }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+
+  assert.equal(
+    calls.some(({ method }) => method === "Page.getFrameTree"),
+    false,
+  );
 });
 
 test("waitForRequest matches exact URL and returns a request facade", async () => {

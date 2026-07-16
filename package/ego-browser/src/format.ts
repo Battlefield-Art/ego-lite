@@ -288,24 +288,27 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
       "await page.waitForFunction(() => document.readyState === 'complete')",
   },
   "page.waitForURL": {
-    signature: "page.waitForURL(url, options?) => Promise<void>",
+    signature: "page.waitForURL(url, options?) => Promise<boolean>",
     description:
-      "Wait until the current URL matches a string, glob, regex, or predicate.",
+      "Wait until the current URL matches a string, glob, regex, or predicate receiving a URL object, then wait for load by default.",
     params: [
       {
         name: "url",
         type: "string | RegExp | Function",
         required: true,
-        description: "URL matcher.",
+        description:
+          "URL matcher. Predicate functions receive a URL object; use url.href, url.pathname, or url.searchParams.",
       },
       {
         name: "options",
-        type: "{ timeout?: number }",
-        description: "Timeout in milliseconds.",
+        type: "{ timeout?: number, waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' | 'commit' }",
+        description:
+          "Timeout in milliseconds and completion state; waitUntil defaults to 'load'.",
       },
     ],
-    returns: "Promise<void>",
-    example: "await page.waitForURL(/docs\\.google\\.com/)",
+    returns: "Promise<boolean>",
+    example:
+      "await page.waitForURL(url => url.pathname === '/done', { timeout: 10000 })",
   },
   "page.waitForRequest": {
     signature:

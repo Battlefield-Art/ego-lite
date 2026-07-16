@@ -53,6 +53,7 @@ Notes:
 - `await browser.closeTab(target?)` — closes the given target id / tab object, or the current tab when omitted.
 - `await page.drainEvents()` — consumes and returns the async event queue produced by the page (navigation events, network events, etc.).
 - `page.waitForRequest(...)` / `page.waitForResponse(...)` — start the wait before the click or form action that triggers the network call.
+- `page.waitForURL(...)` predicate functions receive a `URL` object, not a string. Use `url.href.includes(...)`, `url.pathname`, or `url.searchParams`; do not call `url.includes(...)`. Its `waitUntil` defaults to `"load"`; pass `{ waitUntil: "commit" }` only when intentionally continuing while the document is still loading.
 - Hard rule: during exploration, do not call `page.waitForTimeout(...)` with a value greater than `2000`. A fixed sleep is only for brief visual settling after a non-network UI action.
 - For navigation, search, filtering, sorting, form submit, modal transition, or any action that changes page data, do not use fixed sleeps as the primary wait. Start `page.waitForResponse(...)`, `page.waitForRequest(...)`, `page.waitForURL(...)`, or a concrete state assertion before the triggering action, then verify the expected state.
 
@@ -63,6 +64,11 @@ const responsePromise = page.waitForResponse(
 );
 await page.getByRole('button', { name: /search/i }).click();
 await responsePromise;
+
+await page.waitForURL(
+  (url) => url.pathname === '/orders/complete' && url.searchParams.has('id'),
+  { timeout: 15000 },
+);
 ```
 
 - Hard rule: never reuse `@N` refs across heredoc rounds. Use `@N` only immediately after a fresh `page.snapshot()` in the same script. Across rounds, use `loc=css:...`, `loc=role:...`, `page.getByRole(...)`, `page.getByText(...)`, `page.getByLabel(...)`, or take a new snapshot and act on the new refs immediately.

@@ -58,6 +58,22 @@ test("formatCliLogValue documents ego.learnings as the site facade alias", () =>
   assert.match(parsed.learnings.runTool.example, /learnings\.runTool/);
 });
 
+test("formatCliLogValue documents the waitForURL matcher and default", () => {
+  const formatted = formatCliLogValue({
+    helpers: { page: { waitForURL() {} } },
+  });
+
+  const parsed = JSON.parse(formatted);
+  assert.equal(
+    parsed.helpers.page.waitForURL.signature,
+    "page.waitForURL(url, options?) => Promise<boolean>",
+  );
+  assert.match(
+    parsed.helpers.page.waitForURL.description,
+    /predicate receiving a URL object.*load by default/,
+  );
+});
+
 test("formatCliLogValue handles nested bigint and circular references", () => {
   const value = { id: 1n, child: {} };
   value.child.self = value;

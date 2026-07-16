@@ -83,8 +83,9 @@ export async function waitForFunction(
 
 /**
  * Wait for the current page URL to match a string, glob, RegExp, or predicate.
- * @param {string|RegExp|Function} url URL matcher. Strings with * are treated as globs; other strings are exact.
+ * @param {string|RegExp|Function} url URL matcher. Predicate functions receive a URL object. Strings with * are treated as globs; other strings are exact.
  * @param {{timeout?: number, waitUntil?: "load"|"domcontentloaded"|"networkidle"|"commit"}} [options]
+ *   `waitUntil` defaults to `"load"`.
  * @returns {Promise<boolean>} True when matched before timeout.
  */
 export async function waitForURL(url, options: WaitForURLOptions = {}) {
@@ -100,12 +101,12 @@ export async function waitForURL(url, options: WaitForURLOptions = {}) {
       "location.href",
     );
     if (urlMatches(current, url)) {
-      if (options.waitUntil && options.waitUntil !== "commit") {
-        return waitForLoadState(options.waitUntil, {
-          timeout: Math.max(0, deadline - state.now()),
-        });
-      }
-      return true;
+      const waitUntil = options.waitUntil ?? "load";
+      return waitUntil === "commit"
+        ? true
+        : waitForLoadState(waitUntil, {
+            timeout: Math.max(0, deadline - state.now()),
+          });
     }
     await state.sleep(100);
   }
