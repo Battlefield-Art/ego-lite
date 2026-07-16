@@ -118,6 +118,17 @@ When passing a string that may create a new task space, the string should reflec
 
 **If the task space needs to be preserved after the task ends, keep only the tabs that need to be shown to the user.** Keep loose awareness of how many tabs are open — a quick `(await browser.listTabs()).length` is enough; there's no need to spend a dedicated round just to check. When scratch tabs (search-result pages, cross-check pages, and other one-off pages) pile up, close them as you go rather than letting them all accumulate for the end. When finishing with `{ keep: true }` to leave pages for the user, clear out the remaining scratch tabs so only the pages worth showing stay open. Close a single tab with `await browser.closeTab(targetId)` (`targetId` comes from `browser.listTabs()` or a `browser.openOrReuseTab` return value).
 
+Treat `targetId` as a short-lived handle. Obtain it from `browser.listTabs()`, `browser.currentTab()`, or `browser.openOrReuseTab()` in the current heredoc; never hardcode it, copy it by hand, rename it to `id`, or carry it across heredoc rounds. Before dereferencing a `find(...)` result, check that it exists. `browser.iframeTarget(...)` returns a target-id string or `null`, so validate the result directly instead of reading `.targetId` from it. `browser.switchTab(...)` and `browser.closeTab(...)` refresh and validate the tab list themselves, and their stale-target errors include the currently available tabs.
+
+```js
+const tabs = await browser.listTabs();
+const reportTab = tabs.find((tab) => tab.url.includes('/reports/'));
+if (!reportTab?.targetId) {
+  throw new Error('Report tab not found: ' + JSON.stringify(tabs));
+}
+await browser.switchTab(reportTab.targetId);
+```
+
 ### Control handoff
 
 Only one side — agent or user — holds control of a task space at any time. While the user holds control, any browser operation by the agent fails with a "user is controlling" message — do not retry it; follow the steps below to resume.

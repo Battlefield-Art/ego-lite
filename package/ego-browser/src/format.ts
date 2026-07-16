@@ -582,8 +582,9 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
     example: "console.log(await browser.currentTab())",
   },
   "browser.switchTab": {
-    signature: "browser.switchTab(target) => Promise<object>",
-    description: "Switch to a tab by target id or tab object.",
+    signature: "browser.switchTab(target) => Promise<string>",
+    description:
+      "Refresh the current tab list, validate a target id/tab object, then switch to that tab.",
     params: [
       {
         name: "target",
@@ -592,8 +593,9 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
         description: "Target id or tab object.",
       },
     ],
-    returns: "Promise<object>",
-    example: "await browser.switchTab(targetId)",
+    returns: "Promise<string>",
+    example:
+      "const tab = (await browser.listTabs()).find(t => t.url.includes('/docs')); if (!tab) throw new Error('docs tab not found'); await browser.switchTab(tab.targetId)",
   },
   "browser.openOrReuseTab": {
     signature: "browser.openOrReuseTab(url, options?) => Promise<object>",
@@ -618,7 +620,7 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
   "browser.closeTab": {
     signature: "browser.closeTab(target?) => Promise<string>",
     description:
-      "Close a tab by target id/object, or the current tab when omitted.",
+      "Refresh the current tab list, validate, and close a tab by target id/object, or close the current tab when omitted.",
     params: [
       {
         name: "target",

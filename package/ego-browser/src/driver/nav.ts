@@ -9,7 +9,7 @@ import {
 } from "../browser-runtime.js";
 import { cdp, evaluate } from "../cdp-eval.js";
 import { assertNoEgoError } from "../ego-errors.js";
-import { cachePageUrl, state } from "../state.js";
+import { cachePageUrl, clearPageUrl, state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
 
 export const INTERNAL_URL_PREFIXES = [
@@ -155,10 +155,13 @@ export async function currentTab() {
  * @returns {Promise<string>} Target id.
  */
 export async function switchTab(target: string | { targetId: string }) {
-  const targetId = typeof target === "object" ? target.targetId : target;
+  const targetId = targetIdFrom(target, "switchTab");
+  const tabs = await listTabs();
+  const tab = currentTargetFrom(tabs, targetId, "switchTab");
   await cdp("Target.activateTarget", { targetId });
   invalidateSession();
   setPreferredTarget(targetId);
+  cachePageUrl(tab.url, targetId);
   return targetId;
 }
 
@@ -217,19 +220,23 @@ export async function openOrReuseTab(
  * @returns {Promise<string>} Closed target id.
  */
 export async function closeTab(target: TabTarget | undefined = undefined) {
+  const tabs = await listTabs();
   const targetId =
     target === undefined
-      ? (await currentTab()).targetId
-      : typeof target === "object"
-        ? target.targetId
-        : target;
-  if (!targetId) {
-    throw new Error("closeTab requires a targetId");
-  }
+      ? (tabs.find((tab) => tab.active) || tabs[0])?.targetId
+      : targetIdFrom(target, "closeTab");
+  if (!targetId) throw new Error("closeTab requires a targetId");
+  currentTargetFrom(tabs, targetId, "closeTab");
   await cdp("Target.closeTarget", { targetId });
   invalidateSession();
   if (state.preferredTargetId === targetId) {
     clearPreferredTarget();
+  }
+  clearPageUrl(targetId);
+  if (tabs.length > 1) {
+    const remaining = await waitForClosedTarget(targetId);
+    const active = remaining.find((tab) => tab.active) || remaining[0];
+    if (active) cachePageUrl(active.url, active.targetId);
   }
   return targetId;
 }
@@ -298,4 +305,52 @@ function tabMatchesUrl(tabUrl: string, wantedUrl: string, match: UrlMatchMode) {
 
 function trimSlash(pathname: string) {
   return pathname.replace(/\/+$/, "") || "/";
+}
+
+function targetIdFrom(target: TabTarget, operation: string) {
+  const targetId =
+    typeof target === "string"
+      ? target
+      : target && typeof target === "object"
+        ? target.targetId
+        : undefined;
+  if (typeof targetId !== "string" || !targetId) {
+    throw new Error(
+      `${operation} requires a targetId; received ${JSON.stringify(target)}`,
+    );
+  }
+  return targetId;
+}
+
+function currentTargetFrom(
+  tabs: TabInfo[],
+  targetId: string,
+  operation: string,
+) {
+  const tab = tabs.find((candidate) => candidate.targetId === targetId);
+  if (tab) return tab;
+  const available = tabs.map(({ targetId, title, url }) => ({
+    targetId,
+    title,
+    url,
+  }));
+  throw new Error(
+    `${operation} target not found: ${JSON.stringify(targetId)}. ` +
+      `Refresh browser.listTabs() and select a current targetId. ` +
+      `Available tabs: ${JSON.stringify(available)}`,
+  );
+}
+
+async function waitForClosedTarget(targetId: string) {
+  const deadline = state.now() + 2000;
+  while (true) {
+    const tabs = await listTabs();
+    if (!tabs.some((tab) => tab.targetId === targetId)) return tabs;
+    if (state.now() >= deadline) {
+      throw new Error(
+        `closeTab timed out waiting for target to close: ${JSON.stringify(targetId)}`,
+      );
+    }
+    await state.sleep(50);
+  }
 }
