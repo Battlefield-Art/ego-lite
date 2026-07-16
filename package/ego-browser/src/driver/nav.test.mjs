@@ -177,7 +177,7 @@ test("openOrReuseTab settles a newly opened tab in milliseconds, not seconds", a
   assert.deepEqual(sleeps, [500]);
 });
 
-test("switchTab refreshes the target list and caches the selected URL", async () => {
+test("switchTab refreshes the target list before activating it", async () => {
   const calls = [];
   await withEgo(
     {
@@ -209,8 +209,6 @@ test("switchTab refreshes the target list and caches the selected URL", async ()
       });
       try {
         assert.equal(await switchTab({ targetId: "target-2" }), "target-2");
-        assert.equal(state.pageUrl, "https://example.com/docs");
-        assert.equal(state.pageUrlTargetId, "target-2");
       } finally {
         restore();
       }
@@ -299,13 +297,9 @@ test("closeTab closes an explicit current target and returns its id", async () =
           calls.push({ method, params, sessionId });
           return { success: true };
         },
-        pageUrl: "https://example.com/",
-        pageUrlTargetId: "target-2",
       });
       try {
         assert.equal(await closeTab("target-2"), "target-2");
-        assert.equal(state.pageUrl, "");
-        assert.equal(state.pageUrlTargetId, null);
       } finally {
         restore();
       }
@@ -397,14 +391,10 @@ test("closeTab waits for a closed target to disappear from listTabs", async () =
           sleeps.push(ms);
           now += ms;
         },
-        pageUrl: "https://example.com/scratch",
-        pageUrlTargetId: "target-scratch",
       });
       try {
         assert.equal(await closeTab("target-scratch"), "target-scratch");
         assert.deepEqual(sleeps, [50]);
-        assert.equal(state.pageUrl, "https://example.com/current");
-        assert.equal(state.pageUrlTargetId, "target-current");
       } finally {
         restore();
       }

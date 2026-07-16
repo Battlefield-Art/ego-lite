@@ -2,10 +2,10 @@ import { homeCase } from "./shared.mjs";
 
 export const playwrightPageUrlCases = [
   {
-    name: "regression PWB-03 page.url synchronous contract",
+    name: "regression PWB-03 page.url asynchronous contract",
     body: homeCase(`
-      const initialUrl = page.url();
-      assertEqual(typeof initialUrl, "string", "PWB-03 page.url returns a string synchronously");
+      const initialUrl = await page.url();
+      assertEqual(typeof initialUrl, "string", "PWB-03 awaited page.url returns a string");
       assertIncludes(initialUrl, baseUrl, "PWB-03 page.url reflects the current tab");
 
       const navigation = page.waitForURL(
@@ -14,7 +14,7 @@ export const playwrightPageUrlCases = [
       );
       await page.getByRole("link", { name: "Go to nav target" }).click();
       assert(await navigation, "PWB-03 link navigation reaches nav target");
-      assertIncludes(page.url(), "/nav-target", "PWB-03 page.url refreshes after page navigation");
+      assertIncludes(await page.url(), "/nav-target", "PWB-03 page.url reads the URL after navigation");
     `),
   },
 ];

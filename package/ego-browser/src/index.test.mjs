@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { installEgoSdk } from "../dist/src/index.js";
-import { state } from "../dist/src/state.js";
 
 test("installEgoSdk keeps page.locator chainable while wrapping locator methods", () => {
   const originalLog = console.log;
@@ -44,7 +43,7 @@ test("installEgoSdk keeps page.locator chainable while wrapping locator methods"
   }
 });
 
-test("installEgoSdk preserves the synchronous page.url contract", () => {
+test("installEgoSdk preserves the asynchronous page.url contract", async () => {
   const originalLog = console.log;
   const target = {};
   try {
@@ -52,39 +51,14 @@ test("installEgoSdk preserves the synchronous page.url contract", () => {
       cliLog() {},
       context: {
         page: {
-          url: () => "https://example.com/current",
+          url: async () => "https://example.com/current",
         },
       },
     });
     const value = target.page.url();
-    assert.equal(typeof value, "string");
-    assert.equal(value, "https://example.com/current");
+    assert.equal(typeof value.then, "function");
+    assert.equal(await value, "https://example.com/current");
   } finally {
-    console.log = originalLog;
-  }
-});
-
-test("task-space changes invalidate the synchronous page URL projection", async () => {
-  const originalLog = console.log;
-  const previousUrl = state.pageUrl;
-  const previousTargetId = state.pageUrlTargetId;
-  const target = {
-    ego: {
-      async useTaskSpace() {
-        return { ok: true };
-      },
-    },
-  };
-  try {
-    state.pageUrl = "https://example.com/previous-space";
-    state.pageUrlTargetId = "previous-target";
-    installEgoSdk(target, { cliLog() {} });
-    await target.ego.useTaskSpace("next-space");
-    assert.equal(state.pageUrl, "");
-    assert.equal(state.pageUrlTargetId, null);
-  } finally {
-    state.pageUrl = previousUrl;
-    state.pageUrlTargetId = previousTargetId;
     console.log = originalLog;
   }
 });

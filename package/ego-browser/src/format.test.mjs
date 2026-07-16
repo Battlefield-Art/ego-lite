@@ -41,13 +41,17 @@ test("formatCliLogValue renders documented function properties in object output"
   assert.equal(parsed.helpers.site.runTool.params[0].name, "siteId");
 });
 
-test("formatCliLogValue documents page.url as synchronous", () => {
+test("formatCliLogValue documents page.url as asynchronous", () => {
   const formatted = formatCliLogValue({
     helpers: { page: { url() {} } },
   });
 
   const parsed = JSON.parse(formatted);
-  assert.equal(parsed.helpers.page.url.signature, "page.url() => string");
+  assert.equal(
+    parsed.helpers.page.url.signature,
+    "page.url() => Promise<string>",
+  );
+  assert.match(parsed.helpers.page.url.example, /await page\.url\(\)/);
 });
 
 test("formatCliLogValue documents ego.learnings as the site facade alias", () => {

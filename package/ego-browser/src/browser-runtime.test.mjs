@@ -82,9 +82,6 @@ function cleanup() {
   drainBrowserEvents();
   state.cdpOverride = null;
   state.sessionInflight = null;
-  state.pageUrl = "";
-  state.pageUrlTargetId = null;
-  state.pageMainFrameId = null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -579,82 +576,6 @@ test("ensureSession selects the preferred tab when available", async () => {
     const pageEnable = calls.find((c) => c.method === "Page.enable");
     assert.ok(pageEnable, "Page.enable was called for the attached session");
     assert.equal(pageEnable.sessionId, `auto-sess-${attach.id}`);
-  } finally {
-    cleanup();
-  }
-});
-
-test("ensureSession caches the selected tab URL for synchronous page.url", async () => {
-  installAutoEgo({
-    tabs: [
-      {
-        targetId: "tab-current",
-        active: true,
-        url: "https://example.com/current",
-      },
-    ],
-  });
-  try {
-    await ensureSession();
-    assert.equal(state.pageUrl, "https://example.com/current");
-    assert.equal(state.pageUrlTargetId, "tab-current");
-  } finally {
-    cleanup();
-  }
-});
-
-test("main-frame navigation events refresh the synchronous page URL", async () => {
-  installAutoEgo({
-    tabs: [
-      {
-        targetId: "tab-current",
-        active: true,
-        url: "https://example.com/start",
-      },
-    ],
-  });
-  try {
-    await ensureSession();
-    const sessionId = state.sessionId;
-
-    fireEvent(
-      "Page.frameNavigated",
-      {
-        frame: {
-          id: "main-frame",
-          url: "https://example.com/next",
-        },
-      },
-      sessionId,
-    );
-    assert.equal(state.pageUrl, "https://example.com/next");
-
-    fireEvent(
-      "Page.frameNavigated",
-      {
-        frame: {
-          id: "child-frame",
-          parentId: "main-frame",
-          url: "https://example.com/frame",
-        },
-      },
-      sessionId,
-    );
-    assert.equal(
-      state.pageUrl,
-      "https://example.com/next",
-      "subframe navigation does not replace the page URL",
-    );
-
-    fireEvent(
-      "Page.navigatedWithinDocument",
-      {
-        frameId: "main-frame",
-        url: "https://example.com/next#section",
-      },
-      sessionId,
-    );
-    assert.equal(state.pageUrl, "https://example.com/next#section");
   } finally {
     cleanup();
   }

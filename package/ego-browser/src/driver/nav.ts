@@ -9,7 +9,7 @@ import {
 } from "../browser-runtime.js";
 import { cdp, evaluate } from "../cdp-eval.js";
 import { assertNoEgoError } from "../ego-errors.js";
-import { cachePageUrl, clearPageUrl, state } from "../state.js";
+import { state } from "../state.js";
 import { waitForDocumentLoad } from "./load.js";
 
 export const INTERNAL_URL_PREFIXES = [
@@ -59,7 +59,6 @@ type TabTarget = string | { targetId: string };
  */
 export async function goto(url: string, options: GotoOptions = {}) {
   const navigation = await cdp("Page.navigate", { url });
-  cachePageUrl(url);
   const loaded =
     options.waitUntil === "commit"
       ? false
@@ -102,9 +101,7 @@ export async function pageInfo() {
       ph: root?.scrollHeight ?? innerHeight,
     });
   })()`;
-  const info = JSON.parse(await evaluate(expression));
-  cachePageUrl(info.url);
-  return info;
+  return JSON.parse(await evaluate(expression));
 }
 
 /**
@@ -145,7 +142,6 @@ export async function currentTab() {
   if (!active) {
     throw new Error("no active browser tab");
   }
-  cachePageUrl(active.url, active.targetId);
   return { targetId: active.targetId, url: active.url, title: active.title };
 }
 
@@ -157,11 +153,10 @@ export async function currentTab() {
 export async function switchTab(target: string | { targetId: string }) {
   const targetId = targetIdFrom(target, "switchTab");
   const tabs = await listTabs();
-  const tab = currentTargetFrom(tabs, targetId, "switchTab");
+  currentTargetFrom(tabs, targetId, "switchTab");
   await cdp("Target.activateTarget", { targetId });
   invalidateSession();
   setPreferredTarget(targetId);
-  cachePageUrl(tab.url, targetId);
   return targetId;
 }
 
@@ -203,7 +198,6 @@ export async function openOrReuseTab(
     return { ...existing, active: true, reused: true };
   }
   const targetId = await newTab(url);
-  cachePageUrl(url, targetId);
   if (options.wait !== false) {
     await waitForDocumentLoad({ timeout: options.timeout ?? 20000 });
   }
@@ -232,11 +226,8 @@ export async function closeTab(target: TabTarget | undefined = undefined) {
   if (state.preferredTargetId === targetId) {
     clearPreferredTarget();
   }
-  clearPageUrl(targetId);
   if (tabs.length > 1) {
-    const remaining = await waitForClosedTarget(targetId);
-    const active = remaining.find((tab) => tab.active) || remaining[0];
-    if (active) cachePageUrl(active.url, active.targetId);
+    await waitForClosedTarget(targetId);
   }
   return targetId;
 }

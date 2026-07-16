@@ -34,37 +34,10 @@ export const state = {
   sessionAt: 0,
   sessionInflight: null,
   preferredTargetId: null,
-  // Synchronous projection used by Playwright-style page.url(). The browser
-  // remains authoritative; navigation/tab operations and CDP events refresh it.
-  pageUrl: "",
-  pageUrlTargetId: null,
-  pageMainFrameId: null,
   defaultTimeout: 10000,
   // Last observed Network domain state on the default session (tracked in cdp()).
   networkDomainEnabled: false,
 };
-
-export function cachePageUrl(
-  url: string,
-  targetId = state.sessionTargetId ||
-    state.preferredTargetId ||
-    state.pageUrlTargetId ||
-    null,
-) {
-  if (typeof url !== "string") return;
-  if (targetId && targetId !== state.pageUrlTargetId) {
-    state.pageMainFrameId = null;
-  }
-  state.pageUrl = url;
-  state.pageUrlTargetId = targetId;
-}
-
-export function clearPageUrl(targetId: string | null = null) {
-  if (targetId && targetId !== state.pageUrlTargetId) return;
-  state.pageUrl = "";
-  state.pageUrlTargetId = null;
-  state.pageMainFrameId = null;
-}
 
 export async function send(req) {
   return state.send(req);

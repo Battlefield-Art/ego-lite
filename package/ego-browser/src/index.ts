@@ -7,7 +7,6 @@ import {
   invalidateSession,
   setPreferredTarget,
 } from "./browser-runtime.js";
-import { clearPageUrl } from "./state.js";
 import { formatCliLogValue } from "./format.js";
 import {
   bufferOutput,
@@ -38,7 +37,6 @@ export * from "./helpers.js";
 export { runMain } from "./run.js";
 
 const SYNC_HELPERS = new Set(["help"]);
-const SYNC_VALUE_HELPERS = new Set(["page.url"]);
 const SYNC_FACTORY_HELPERS = new Set([
   "page.locator",
   "page.getByRole",
@@ -225,9 +223,6 @@ function wrapReady(
   path: string[] = [],
 ): unknown {
   if (typeof value === "function") {
-    if (SYNC_VALUE_HELPERS.has(path.join("."))) {
-      return (...args: unknown[]) => value(...args);
-    }
     if (isSyncFactoryHelper(path)) {
       return (...args: unknown[]) =>
         wrapReady(value(...args), readySignal, readyError, path);
@@ -290,7 +285,6 @@ function wrapInvalidating(ego: EgoRuntime, methodNames: string[]) {
     const after = () => {
       invalidateSession();
       clearPreferredTarget();
-      clearPageUrl();
     };
     ego[name] = function (...args: unknown[]) {
       const result = original.apply(this, args);

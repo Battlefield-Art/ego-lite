@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import * as helperExports from "../dist/src/helpers.js";
-import { state } from "../dist/src/state.js";
+import { setOverrides } from "../dist/src/state.js";
 import {
   claimTaskSpace,
   completeTaskSpace,
@@ -221,15 +221,32 @@ test("helper surface exposes Playwright-style object facades", () => {
   assert.equal("elementEval" in context, false);
 });
 
-test("page.url returns the cached current URL synchronously", () => {
-  const previousUrl = state.pageUrl;
-  state.pageUrl = "https://example.com/current";
+test("page.url reads the current URL asynchronously", async () => {
+  const restore = setOverrides({
+    cdpOverride: async (method) => {
+      assert.equal(method, "Runtime.evaluate");
+      return {
+        result: {
+          value: JSON.stringify({
+            url: "https://example.com/current",
+            title: "Current",
+            w: 800,
+            h: 600,
+            sx: 0,
+            sy: 0,
+            pw: 800,
+            ph: 600,
+          }),
+        },
+      };
+    },
+  });
   try {
     const value = helperContext().page.url();
-    assert.equal(typeof value, "string");
-    assert.equal(value, "https://example.com/current");
+    assert.equal(typeof value.then, "function");
+    assert.equal(await value, "https://example.com/current");
   } finally {
-    state.pageUrl = previousUrl;
+    restore();
   }
 });
 
