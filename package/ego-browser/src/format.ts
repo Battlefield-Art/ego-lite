@@ -928,7 +928,7 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
   cdp: {
     signature: "cdp(method, params?) => Promise<any>",
     description:
-      "Send a raw Chrome DevTools Protocol command to the current target.",
+      "Send a supported raw Chrome DevTools Protocol command to the current target. Browser.grantPermissions and Browser.setPermission are not exposed by the task-space bridge.",
     params: [
       {
         name: "method",

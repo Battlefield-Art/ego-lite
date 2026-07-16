@@ -288,7 +288,7 @@ Before writing substantial content into a rich editor, perform a tiny write prob
 3. **Direct DOM / CDP workflow: `await page.locator(...).evaluateAll(...)`, `await page.evaluate(...)`, or `await cdp(...)`** — use when you need browser state, compact data extraction, custom DOM traversal, or raw browser capabilities.
    - Prefer `page.locator(selector).evaluateAll(...)` for element collections. Use `page.evaluate(...)` only for page-wide state or custom browser logic.
    - Prefer function form for `page.evaluate`, for example `await page.evaluate(() => document.title)`.
-   - Use `await cdp(...)` for browser protocol operations that helpers do not cover.
+   - Use `await cdp(...)` for supported browser protocol operations that helpers do not cover. The task-space bridge does not expose `Browser.grantPermissions` or `Browser.setPermission`; do not probe those methods as a clipboard workaround. Read page text through locators, enter text with `fill`/keyboard helpers, and use the site's own copy/paste controls when required. If a task truly requires browser permission mutation, report that capability boundary instead of retrying unsupported raw CDP methods.
 
 These workflows can be combined. A task may take multiple heredoc rounds when the next step depends on fresh page state or user handoff. In each round, write a coherent script that advances the task: observe, act or extract, verify, and report with `console.log(...)`. Avoid tiny probe scripts, but don't force the whole task into one oversized script.
 

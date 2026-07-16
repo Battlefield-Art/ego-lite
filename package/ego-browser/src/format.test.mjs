@@ -93,3 +93,12 @@ test("formatCliLogValue handles nested bigint and circular references", () => {
   assert.equal(parsed.id, "1n");
   assert.equal(parsed.child.self, "[Circular]");
 });
+
+test("formatCliLogValue documents unsupported permission CDP methods", () => {
+  const formatted = formatCliLogValue({ cdp() {} });
+
+  const parsed = JSON.parse(formatted);
+  assert.match(parsed.cdp.description, /Browser\.grantPermissions/);
+  assert.match(parsed.cdp.description, /Browser\.setPermission/);
+  assert.match(parsed.cdp.description, /not exposed/);
+});

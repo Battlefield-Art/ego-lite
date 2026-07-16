@@ -29,6 +29,7 @@ import { playwrightPageUrlCases } from "./playwright-page-url.mjs";
 import { playwrightPageInfoCases } from "./playwright-page-info.mjs";
 import { playwrightLocatorCases } from "./playwright-locators.mjs";
 import { playwrightTargetCases } from "./playwright-targets.mjs";
+import { playwrightPermissionCases } from "./playwright-permissions.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -64,4 +65,5 @@ export const e2eCases = [
   ...playwrightPageInfoCases,
   ...playwrightLocatorCases,
   ...playwrightTargetCases,
+  ...playwrightPermissionCases,
 ];
