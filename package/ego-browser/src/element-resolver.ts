@@ -10,6 +10,34 @@ export class ElementResolutionError extends Error {
   }
 }
 
+/**
+ * Return the ordered AX backend-node match set for a root role locator.
+ * Non-role selectors return null so callers can use their normal DOM path.
+ */
+export async function queryRoleLocatorBackendNodeIds(
+  cdp,
+  sessionId,
+  selectorOrRef,
+): Promise<number[] | null> {
+  const locator = parseLocator(selectorOrRef);
+  if (locator?.kind !== "role") {
+    return null;
+  }
+  const backendNodeIds = await findBackendNodeIdsByRoleName(
+    cdp,
+    sessionId,
+    locator.role,
+    locator.name,
+  );
+  const nth = locator.nth as number | "last" | undefined;
+  if (nth === undefined) {
+    return backendNodeIds;
+  }
+  const nthIndex = nth === "last" ? backendNodeIds.length - 1 : nth;
+  const backendNodeId = backendNodeIds[nthIndex];
+  return backendNodeId === undefined ? [] : [backendNodeId];
+}
+
 function exceptionText(result: any) {
   const d = result?.exceptionDetails;
   return d?.exception?.description || d?.text || "evaluation error";
@@ -19,6 +47,17 @@ function matchCountKind(message: string): "transient" | "permanent" {
   const m = /matched (\d+)/.exec(message);
   const n = m ? Number(m[1]) : 0;
   return n > 1 ? "permanent" : "transient";
+}
+
+function selectorResolutionError(selector, result) {
+  const message = exceptionText(result);
+  if (/\bmatched \d+ elements\b/.test(message)) {
+    return new ElementResolutionError(message, matchCountKind(message));
+  }
+  return new ElementResolutionError(
+    `Invalid selector: ${selector}: ${message}`,
+    "permanent",
+  );
 }
 
 export async function resolveElementCenter(
@@ -95,10 +134,7 @@ export async function resolveElementCenter(
     sessionId,
   );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(
-      `Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`,
-      "permanent",
-    );
+    throw selectorResolutionError(selectorOrRef, result);
   }
   const value = result.result?.value;
   if (typeof value?.x !== "number" || typeof value?.y !== "number") {
@@ -189,10 +225,7 @@ export async function resolveElementObjectId(
     sessionId,
   );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(
-      `Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`,
-      "permanent",
-    );
+    throw selectorResolutionError(selectorOrRef, result);
   }
   const objectId = result.result?.objectId;
   if (!objectId) {
@@ -369,6 +402,33 @@ async function findBackendNodeIdByRoleName(
   frameId = undefined,
   iframeSessions = new Map(),
 ) {
+  const matches = await findBackendNodeIdsByRoleName(
+    cdp,
+    sessionId,
+    role,
+    name,
+    frameId,
+    iframeSessions,
+  );
+  const nthIndex = nth === "last" ? matches.length - 1 : (nth ?? 0);
+  const match = matches[nthIndex];
+  if (match !== undefined) {
+    return match;
+  }
+  throw new ElementResolutionError(
+    `Could not locate element with role=${role} name=${name}`,
+    "transient",
+  );
+}
+
+async function findBackendNodeIdsByRoleName(
+  cdp,
+  sessionId,
+  role,
+  name,
+  frameId = undefined,
+  iframeSessions = new Map(),
+): Promise<number[]> {
   const [params, effectiveSessionId] = resolveAxSession(
     frameId,
     sessionId,
@@ -394,42 +454,25 @@ async function findBackendNodeIdByRoleName(
     ) {
       continue;
     }
-    matches.push(node);
-  }
-  const nthIndex = nth === "last" ? matches.length - 1 : (nth ?? 0);
-  const match = matches[nthIndex];
-  if (match) {
-    if (
-      match.backendDOMNodeId === undefined ||
-      match.backendDOMNodeId === null
-    ) {
+    const backendNodeId = node.backendDOMNodeId;
+    if (backendNodeId === undefined || backendNodeId === null) {
       throw new ElementResolutionError(
         `AX node has no backendDOMNodeId for role=${role} name=${name}`,
         "permanent",
       );
     }
-    return match.backendDOMNodeId;
+    matches.push(backendNodeId);
   }
-  throw new ElementResolutionError(
-    `Could not locate element with role=${role} name=${name}`,
-    "transient",
-  );
+  return matches;
 }
 
 async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
-  const result = await send(cdp, "Accessibility.getFullAXTree", {}, sessionId);
-  const matches = [];
-  for (const node of result.nodes || []) {
-    if (node.ignored) {
-      continue;
-    }
-    if (
-      extractAxString(node.role) === role &&
-      (name === undefined || axNameMatches(extractAxString(node.name), name))
-    ) {
-      matches.push(node);
-    }
-  }
+  const matches = await findBackendNodeIdsByRoleName(
+    cdp,
+    sessionId,
+    role,
+    name,
+  );
   if (matches.length === 0) {
     throw new ElementResolutionError(
       `Locator role:${role}[name=${JSON.stringify(name)}] matched 0 elements`,
@@ -442,14 +485,7 @@ async function findUniqueBackendNodeIdByRoleName(cdp, sessionId, role, name) {
       "permanent",
     );
   }
-  const backendNodeId = matches[0].backendDOMNodeId;
-  if (backendNodeId === undefined || backendNodeId === null) {
-    throw new ElementResolutionError(
-      `AX node has no backendDOMNodeId for role=${role} name=${name}`,
-      "permanent",
-    );
-  }
-  return backendNodeId;
+  return matches[0];
 }
 
 function resolveAxSession(frameId, sessionId, iframeSessions) {
@@ -467,10 +503,12 @@ function resolveAxSession(frameId, sessionId, iframeSessions) {
 }
 
 function buildFindElementJs(selector) {
-  if (String(selector).startsWith("xpath=")) {
-    return `document.evaluate(${JSON.stringify(String(selector).slice(6))}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`;
-  }
-  return `(() => ${queryAllExpression(selector)}[0] || null)()`;
+  const matchError = JSON.stringify(`Locator ${String(selector)} matched `);
+  return `(() => {
+    const elements = ${queryAllExpression(selector)};
+    if (elements.length > 1) throw new Error(${matchError} + elements.length + ' elements');
+    return elements[0] || null;
+  })()`;
 }
 
 function buildLocatorFindJs(locator) {

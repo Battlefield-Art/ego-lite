@@ -41,6 +41,19 @@ test("formatCliLogValue renders documented function properties in object output"
   assert.equal(parsed.helpers.site.runTool.params[0].name, "siteId");
 });
 
+test("formatCliLogValue documents page.url as asynchronous", () => {
+  const formatted = formatCliLogValue({
+    helpers: { page: { url() {} } },
+  });
+
+  const parsed = JSON.parse(formatted);
+  assert.equal(
+    parsed.helpers.page.url.signature,
+    "page.url() => Promise<string>",
+  );
+  assert.match(parsed.helpers.page.url.example, /await page\.url\(\)/);
+});
+
 test("formatCliLogValue documents ego.learnings as the site facade alias", () => {
   const formatted = formatCliLogValue({
     learnings: {
@@ -58,6 +71,22 @@ test("formatCliLogValue documents ego.learnings as the site facade alias", () =>
   assert.match(parsed.learnings.runTool.example, /learnings\.runTool/);
 });
 
+test("formatCliLogValue documents the waitForURL matcher and default", () => {
+  const formatted = formatCliLogValue({
+    helpers: { page: { waitForURL() {} } },
+  });
+
+  const parsed = JSON.parse(formatted);
+  assert.equal(
+    parsed.helpers.page.waitForURL.signature,
+    "page.waitForURL(url, options?) => Promise<boolean>",
+  );
+  assert.match(
+    parsed.helpers.page.waitForURL.description,
+    /predicate receiving a URL object.*load by default/,
+  );
+});
+
 test("formatCliLogValue handles nested bigint and circular references", () => {
   const value = { id: 1n, child: {} };
   value.child.self = value;
@@ -67,4 +96,13 @@ test("formatCliLogValue handles nested bigint and circular references", () => {
   const parsed = JSON.parse(formatted);
   assert.equal(parsed.id, "1n");
   assert.equal(parsed.child.self, "[Circular]");
+});
+
+test("formatCliLogValue documents unsupported permission CDP methods", () => {
+  const formatted = formatCliLogValue({ cdp() {} });
+
+  const parsed = JSON.parse(formatted);
+  assert.match(parsed.cdp.description, /Browser\.grantPermissions/);
+  assert.match(parsed.cdp.description, /Browser\.setPermission/);
+  assert.match(parsed.cdp.description, /not exposed/);
 });

@@ -106,6 +106,35 @@ export async function startFixtureServer(taskName) {
       res.end(`status ${code}`);
       return;
     }
+    if (url.pathname === "/regression/delayed-asset.svg") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      setTimeout(() => {
+        res.writeHead(200, {
+          "content-type": "image/svg+xml",
+          "cache-control": "no-store",
+        });
+        res.end(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#2457ff"/></svg>',
+        );
+      }, delayMs);
+      return;
+    }
+    if (url.pathname === "/regression/slow-load") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      res.writeHead(200, {
+        "content-type": "text/html",
+        "cache-control": "no-store",
+      });
+      res.end(`<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>slow load regression</title></head>
+  <body>
+    <h1>Slow load regression</h1>
+    <img alt="delayed asset" src="/regression/delayed-asset.svg?ms=${delayMs}&nonce=${Date.now()}">
+  </body>
+</html>`);
+      return;
+    }
     if (url.pathname === "/api/bytes") {
       const n = Math.max(0, Number(url.searchParams.get("n") || 0));
       res.writeHead(200, {
@@ -142,6 +171,20 @@ export async function startFixtureServer(taskName) {
       res.end(pageHtml("nav-target"));
       return;
     }
+    if (url.pathname === "/regression/slow-document") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      res.writeHead(200, {
+        "content-type": "text/html",
+        "cache-control": "no-store",
+      });
+      res.flushHeaders?.();
+      setTimeout(() => {
+        res.end(
+          "<!doctype html><html><head><title>slow document regression</title></head><body><h1>Ready</h1></body></html>",
+        );
+      }, delayMs);
+      return;
+    }
     if (url.pathname === "/secondary") {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(pageHtml("secondary"));
@@ -176,6 +219,11 @@ export async function startFixtureServer(taskName) {
     server: fixtureServer,
     baseUrl: `http://127.0.0.1:${address.port}`,
   };
+}
+
+function boundedDelay(raw, fallback) {
+  const value = Number(raw ?? fallback);
+  return Number.isFinite(value) ? Math.max(0, Math.min(value, 5000)) : fallback;
 }
 
 function pageHtml(kind) {
@@ -402,6 +450,12 @@ function pageHtml(kind) {
         <button class="duplicate-action" type="button">Duplicate action</button>
         <a id="nav-link" href="/nav-target" style="margin-left:8px">Go to nav target</a>
         <a id="download-link" href="/download/sample.txt" download style="margin-left:8px">Download sample</a>
+        <div id="home-type-listbox" role="listbox" aria-label="Home type" style="display:inline-flex;gap:6px;margin-left:8px">
+          <button id="house-option-primary" type="button" role="option" aria-selected="false">House</button>
+          <button id="house-option-secondary" type="button" role="option" aria-selected="false">House</button>
+          <!-- Hidden responsive-variant dupe: visible to a naive DOM role scan, ignored by the AX tree. -->
+          <button id="house-option-hidden" type="button" role="option" aria-selected="false" style="display:none">House</button>
+        </div>
       </div>
 
       <div class="card-row">
@@ -560,6 +614,14 @@ function pageHtml(kind) {
         window.__fixtureState.doubleClicks += 1;
         window.__fixtureState.lastDoubleClickDetail = event.detail;
       });
+
+      for (const option of document.querySelectorAll("#home-type-listbox [role=option]")) {
+        option.addEventListener("click", () => {
+          for (const peer of document.querySelectorAll("#home-type-listbox [role=option]")) {
+            peer.setAttribute("aria-selected", String(peer === option));
+          }
+        });
+      }
 
       /* ---- hover zone ---- */
       for (const type of ["mousemove", "mouseover"]) {

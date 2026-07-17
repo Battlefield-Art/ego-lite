@@ -63,6 +63,40 @@ test("locator read helpers call a resolved element", async () => {
   );
 });
 
+test("required locator reads retry transient zero matches", async () => {
+  let attempts = 0;
+  let now = 0;
+  const sleeps = [];
+  const restore = setOverrides({
+    defaultTimeout: 500,
+    now: () => now,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      now += ms;
+    },
+    cdpOverride(method) {
+      if (method === "Runtime.evaluate") {
+        attempts += 1;
+        return attempts < 3
+          ? { result: {} }
+          : { result: { objectId: "node-delayed" } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        return { result: { value: "delayed content" } };
+      }
+      return {};
+    },
+  });
+  try {
+    assert.equal(await textContent("#delayed-content"), "delayed content");
+  } finally {
+    restore();
+  }
+
+  assert.equal(attempts, 3);
+  assert.deepEqual(sleeps, [100, 100]);
+});
+
 test("locator collection helpers evaluate all matching nodes", async () => {
   const restore = setOverrides({
     cdpOverride(method, params) {
@@ -150,17 +184,27 @@ test("filter locators support hasText, hasNotText, has, and hasNot", async () =>
   }
 });
 
-test("role locators support regex accessible names in collection queries", async () => {
+test("role locators use AX regex accessible names in collection queries", async () => {
   const selector = `loc=role:button[name=${JSON.stringify({
     regex: "checkout",
     flags: "i",
   })}]`;
+  const calls = [];
   const restore = setOverrides({
     cdpOverride(method, params) {
-      assert.equal(method, "Runtime.evaluate");
-      assert.match(params.expression, /new RegExp\("checkout", "i"\)/);
-      assert.match(params.expression, /accessibleName\(el\)/);
-      return { result: { value: 1 } };
+      calls.push({ method, params });
+      if (method === "Accessibility.getFullAXTree") {
+        return {
+          nodes: [
+            {
+              role: { value: "button" },
+              name: { value: "Proceed to Checkout" },
+              backendDOMNodeId: 101,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected CDP method: ${method}`);
     },
   });
   try {
@@ -168,6 +212,86 @@ test("role locators support regex accessible names in collection queries", async
   } finally {
     restore();
   }
+  assert.deepEqual(
+    calls.map((call) => call.method),
+    ["Accessibility.getFullAXTree"],
+  );
+});
+
+test("role collections use the same AX match set as nth element operations", async () => {
+  const selector = 'loc=role:option[name="House"]';
+  const second = `internal:nth=1;${selector}`;
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params) {
+      calls.push({ method, params });
+      if (method === "Accessibility.getFullAXTree") {
+        return {
+          nodes: [
+            {
+              role: { value: "option" },
+              name: { value: "House" },
+              backendDOMNodeId: 100,
+            },
+            {
+              role: { value: "option" },
+              name: { value: "House" },
+              backendDOMNodeId: 200,
+            },
+          ],
+        };
+      }
+      if (method === "DOM.resolveNode") {
+        return { object: { objectId: `node-${params.backendNodeId}` } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        if (params.functionDeclaration.includes("innerText target")) {
+          assert.equal(params.objectId, "node-200");
+          return { result: { value: "House 2" } };
+        }
+        assert.deepEqual(
+          [
+            params.objectId,
+            ...params.arguments
+              .filter((argument) => argument.objectId)
+              .map((argument) => argument.objectId),
+          ],
+          ["node-100", "node-200"],
+        );
+        const functionSource = params.arguments.find(
+          (argument) =>
+            typeof argument.value === "string" &&
+            argument.value.includes("elements"),
+        )?.value;
+        if (functionSource?.includes("allInnerTexts targets")) {
+          return { result: { value: ["House 1", "House 2"] } };
+        }
+        return { result: { value: ["HOUSE 1", "HOUSE 2"] } };
+      }
+      if (method === "Runtime.releaseObject") {
+        return {};
+      }
+      throw new Error(`Unexpected CDP method: ${method}`);
+    },
+  });
+  try {
+    assert.equal(await count(selector), 2);
+    assert.equal(await count(second), 1);
+    assert.equal(await innerText(second), "House 2");
+    assert.deepEqual(await allInnerTexts(selector), ["House 1", "House 2"]);
+    assert.deepEqual(
+      await evaluateAll(selector, (elements) =>
+        elements.map((element) => element.textContent.toUpperCase()),
+      ),
+      ["HOUSE 1", "HOUSE 2"],
+    );
+  } finally {
+    restore();
+  }
+  assert.equal(
+    calls.some((call) => call.method === "Runtime.evaluate"),
+    false,
+  );
 });
 
 test("raw Playwright has-text selectors filter native CSS candidates", async () => {

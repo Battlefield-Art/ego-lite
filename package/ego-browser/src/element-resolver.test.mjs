@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   resolveElementCenter,
+  resolveElementObjectId,
   ElementResolutionError,
 } from "../dist/src/element-resolver.js";
 import { RefMap } from "../dist/src/ref-map.js";
@@ -163,6 +164,79 @@ test("css locator matched multiple elements is permanent", async () => {
     (error) => {
       assert.ok(error instanceof ElementResolutionError);
       assert.equal(error.kind, "permanent");
+      return true;
+    },
+  );
+});
+
+test("raw CSS selector matched multiple elements is permanent", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(params.expression, /querySelectorAll\("\.duplicate"\)/);
+      assert.match(params.expression, /elements\.length > 1/);
+      return {
+        exceptionDetails: {
+          exception: {
+            description: "Error: Locator .duplicate matched 2 elements",
+          },
+        },
+      };
+    }
+    return {};
+  });
+  await assert.rejects(
+    () => resolveElementCenter(cdp, undefined, new RefMap(), ".duplicate"),
+    (error) => {
+      assert.ok(error instanceof ElementResolutionError);
+      assert.equal(error.kind, "permanent");
+      assert.match(error.message, /matched 2 elements/);
+      return true;
+    },
+  );
+});
+
+test("raw XPath selector matched multiple elements is permanent for reads", async () => {
+  const cdp = new FakeCDP(async (method, params) => {
+    if (method === "Runtime.evaluate") {
+      assert.match(
+        params.expression,
+        /XPathResult\.ORDERED_NODE_SNAPSHOT_TYPE/,
+      );
+      assert.match(params.expression, /elements\.length > 1/);
+      return {
+        exceptionDetails: {
+          exception: {
+            description: "Error: Locator xpath=\/\/button matched 2 elements",
+          },
+        },
+      };
+    }
+    return {};
+  });
+  await assert.rejects(
+    () =>
+      resolveElementObjectId(cdp, undefined, new RefMap(), "xpath=//button"),
+    (error) => {
+      assert.ok(error instanceof ElementResolutionError);
+      assert.equal(error.kind, "permanent");
+      assert.match(error.message, /matched 2 elements/);
+      return true;
+    },
+  );
+});
+
+test("raw CSS selector matched zero elements remains transient", async () => {
+  const cdp = new FakeCDP(async (method) => {
+    if (method === "Runtime.evaluate") {
+      return { result: { value: null } };
+    }
+    return {};
+  });
+  await assert.rejects(
+    () => resolveElementCenter(cdp, undefined, new RefMap(), ".missing"),
+    (error) => {
+      assert.ok(error instanceof ElementResolutionError);
+      assert.equal(error.kind, "transient");
       return true;
     },
   );
