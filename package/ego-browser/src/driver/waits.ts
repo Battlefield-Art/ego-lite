@@ -102,10 +102,11 @@ export async function waitForURL(url, options: WaitForURLOptions = {}) {
     );
     if (urlMatches(current, url)) {
       const waitUntil = options.waitUntil ?? "load";
-      // waitForDocumentLoad treats about:blank as an uncommitted transient
-      // document, so a load wait on a matched blank page can never succeed;
-      // its empty document is already loaded and has no network traffic.
-      return waitUntil === "commit" || current === "about:blank"
+      // waitForDocumentLoad treats about:blank as an uncommitted transient,
+      // so skip document-load states for a matched blank page. Explicit
+      // networkidle still needs to observe its idle window.
+      return waitUntil === "commit" ||
+        (current === "about:blank" && waitUntil !== "networkidle")
         ? true
         : waitForLoadState(waitUntil, {
             timeout: Math.max(0, deadline - state.now()),

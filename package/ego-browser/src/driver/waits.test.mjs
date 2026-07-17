@@ -211,6 +211,42 @@ test("waitForURL resolves a matched about:blank without waiting for load", async
   );
 });
 
+test("waitForURL preserves networkidle for a matched about:blank", async () => {
+  const methods = [];
+  let t = 0;
+  const restore = setOverrides({
+    cdpOverride: async (method, params) => {
+      methods.push(method);
+      if (
+        method === "Runtime.evaluate" &&
+        params.expression === "location.href"
+      ) {
+        return { result: { value: "about:blank" } };
+      }
+      return {};
+    },
+    now: () => t,
+    sleep: async (ms) => {
+      t += ms;
+    },
+  });
+  try {
+    assert.equal(
+      await waitForURL("about:blank", {
+        timeout: 5000,
+        waitUntil: "networkidle",
+      }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+
+  assert.ok(methods.includes("Network.enable"));
+  assert.ok(methods.includes("Network.disable"));
+  assert.ok(t >= 500, "networkidle observes its default idle window");
+});
+
 test("waitForRequest matches exact URL and returns a request facade", async () => {
   const calls = installAutoEgo();
   try {
