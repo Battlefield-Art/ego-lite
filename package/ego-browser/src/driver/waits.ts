@@ -102,7 +102,10 @@ export async function waitForURL(url, options: WaitForURLOptions = {}) {
     );
     if (urlMatches(current, url)) {
       const waitUntil = options.waitUntil ?? "load";
-      return waitUntil === "commit"
+      // waitForDocumentLoad treats about:blank as an uncommitted transient
+      // document, so a load wait on a matched blank page can never succeed;
+      // its empty document is already loaded and has no network traffic.
+      return waitUntil === "commit" || current === "about:blank"
         ? true
         : waitForLoadState(waitUntil, {
             timeout: Math.max(0, deadline - state.now()),

@@ -191,6 +191,26 @@ test("waitForURL waitUntil commit returns without waiting for load", async () =>
   );
 });
 
+test("waitForURL resolves a matched about:blank without waiting for load", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride: async (method, params) => {
+      calls.push({ method, params });
+      return { result: { value: "about:blank" } };
+    },
+  });
+  try {
+    assert.equal(await waitForURL("about:blank"), true);
+  } finally {
+    restore();
+  }
+
+  assert.equal(
+    calls.some(({ method }) => method === "Page.getFrameTree"),
+    false,
+  );
+});
+
 test("waitForRequest matches exact URL and returns a request facade", async () => {
   const calls = installAutoEgo();
   try {
