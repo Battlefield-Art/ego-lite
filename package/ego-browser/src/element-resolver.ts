@@ -49,6 +49,17 @@ function matchCountKind(message: string): "transient" | "permanent" {
   return n > 1 ? "permanent" : "transient";
 }
 
+function selectorResolutionError(selector, result) {
+  const message = exceptionText(result);
+  if (/\bmatched \d+ elements\b/.test(message)) {
+    return new ElementResolutionError(message, matchCountKind(message));
+  }
+  return new ElementResolutionError(
+    `Invalid selector: ${selector}: ${message}`,
+    "permanent",
+  );
+}
+
 export async function resolveElementCenter(
   cdp,
   sessionId,
@@ -123,10 +134,7 @@ export async function resolveElementCenter(
     sessionId,
   );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(
-      `Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`,
-      "permanent",
-    );
+    throw selectorResolutionError(selectorOrRef, result);
   }
   const value = result.result?.value;
   if (typeof value?.x !== "number" || typeof value?.y !== "number") {
@@ -217,10 +225,7 @@ export async function resolveElementObjectId(
     sessionId,
   );
   if (result.exceptionDetails) {
-    throw new ElementResolutionError(
-      `Invalid selector: ${selectorOrRef}: ${exceptionText(result)}`,
-      "permanent",
-    );
+    throw selectorResolutionError(selectorOrRef, result);
   }
   const objectId = result.result?.objectId;
   if (!objectId) {
@@ -498,10 +503,12 @@ function resolveAxSession(frameId, sessionId, iframeSessions) {
 }
 
 function buildFindElementJs(selector) {
-  if (String(selector).startsWith("xpath=")) {
-    return `document.evaluate(${JSON.stringify(String(selector).slice(6))}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`;
-  }
-  return `(() => ${queryAllExpression(selector)}[0] || null)()`;
+  const matchError = JSON.stringify(`Locator ${String(selector)} matched `);
+  return `(() => {
+    const elements = ${queryAllExpression(selector)};
+    if (elements.length > 1) throw new Error(${matchError} + elements.length + ' elements');
+    return elements[0] || null;
+  })()`;
 }
 
 function buildLocatorFindJs(locator) {
