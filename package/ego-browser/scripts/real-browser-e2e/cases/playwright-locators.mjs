@@ -33,8 +33,28 @@ export const playwrightLocatorCases = [
         "PWB-06 non-unique locator remains strict"
       );
       assertEqual(await locator.count(), 2, "PWB-06 count exposes both matches");
-      await locator.first().click({ timeout: 1000 });
-      assert(await locator.first().isVisible(), "PWB-06 first resolves a confirmed legitimate duplicate");
+
+      const rawCss = page.locator(".duplicate-action");
+      await assertRejects(
+        () => rawCss.click({ timeout: 1000 }),
+        "matched 2 elements",
+        "PWB-06 raw CSS action remains strict"
+      );
+
+      const rawXpath = page.locator('xpath=//button[contains(@class, "duplicate-action")]');
+      await assertRejects(
+        () => rawXpath.innerText(),
+        "matched 2 elements",
+        "PWB-06 raw XPath read remains strict"
+      );
+
+      await rawCss.first().click({ timeout: 1000 });
+      assert(await rawCss.first().isVisible(), "PWB-06 first resolves a confirmed legitimate duplicate");
+      assertEqual(
+        await rawXpath.nth(1).innerText(),
+        "Duplicate action",
+        "PWB-06 nth resolves a confirmed legitimate XPath duplicate"
+      );
     `),
   },
 ];
