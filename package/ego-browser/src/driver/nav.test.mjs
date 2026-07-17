@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 
 import {
   browserCdp,
@@ -12,6 +13,7 @@ import {
   openOrReuseTab,
   pageInfo,
   closeTab,
+  switchTab,
 } from "../../dist/src/driver/nav.js";
 import { setOverrides, state } from "../../dist/src/state.js";
 
@@ -175,19 +177,134 @@ test("openOrReuseTab settles a newly opened tab in milliseconds, not seconds", a
   assert.deepEqual(sleeps, [500]);
 });
 
-test("closeTab closes an explicit target and returns its id", async () => {
+test("switchTab refreshes the target list before activating it", async () => {
   const calls = [];
-  const restore = setOverrides({
-    cdpOverride(method, params, sessionId) {
-      calls.push({ method, params, sessionId });
-      return { success: true };
+  await withEgo(
+    {
+      async listTabs() {
+        return {
+          tabs: [
+            {
+              targetId: "target-1",
+              active: true,
+              title: "Home",
+              url: "https://example.com/",
+            },
+            {
+              targetId: "target-2",
+              active: false,
+              title: "Docs",
+              url: "https://example.com/docs",
+            },
+          ],
+        };
+      },
     },
-  });
-  try {
-    assert.equal(await closeTab("target-2"), "target-2");
-  } finally {
-    restore();
-  }
+    async () => {
+      const restore = setOverrides({
+        cdpOverride(method, params, sessionId) {
+          calls.push({ method, params, sessionId });
+          return { success: true };
+        },
+      });
+      try {
+        assert.equal(await switchTab({ targetId: "target-2" }), "target-2");
+      } finally {
+        restore();
+      }
+    },
+  );
+
+  assert.deepEqual(calls, [
+    {
+      method: "Target.activateTarget",
+      params: { targetId: "target-2" },
+      sessionId: undefined,
+    },
+  ]);
+});
+
+test("switchTab rejects a stale target with the refreshed tab list", async () => {
+  let cdpCalled = false;
+  await withEgo(
+    {
+      async listTabs() {
+        return {
+          tabs: [
+            {
+              targetId: "target-current",
+              active: true,
+              title: "Current",
+              url: "https://example.com/current",
+            },
+          ],
+        };
+      },
+    },
+    async () => {
+      const restore = setOverrides({
+        cdpOverride() {
+          cdpCalled = true;
+          return {};
+        },
+      });
+      try {
+        await assert.rejects(
+          () => switchTab("target-stale"),
+          (error) => {
+            assert.match(error.message, /switchTab target not found/);
+            assert.match(error.message, /target-stale/);
+            assert.match(error.message, /target-current/);
+            assert.match(error.message, /https:\/\/example\.com\/current/);
+            return true;
+          },
+        );
+      } finally {
+        restore();
+      }
+    },
+  );
+  assert.equal(cdpCalled, false);
+});
+
+test("switchTab rejects tab objects without targetId at the boundary", async () => {
+  await assert.rejects(
+    () => switchTab({ id: "target-2" }),
+    /switchTab requires a targetId.*received.*id/,
+  );
+});
+
+test("closeTab closes an explicit current target and returns its id", async () => {
+  const calls = [];
+  await withEgo(
+    {
+      async listTabs() {
+        return {
+          tabs: [
+            {
+              targetId: "target-2",
+              active: true,
+              title: "Example",
+              url: "https://example.com/",
+            },
+          ],
+        };
+      },
+    },
+    async () => {
+      const restore = setOverrides({
+        cdpOverride(method, params, sessionId) {
+          calls.push({ method, params, sessionId });
+          return { success: true };
+        },
+      });
+      try {
+        assert.equal(await closeTab("target-2"), "target-2");
+      } finally {
+        restore();
+      }
+    },
+  );
 
   assert.deepEqual(calls, [
     {
@@ -196,6 +313,93 @@ test("closeTab closes an explicit target and returns its id", async () => {
       sessionId: undefined,
     },
   ]);
+});
+
+test("closeTab rejects a stale explicit target before CDP dispatch", async () => {
+  let cdpCalled = false;
+  await withEgo(
+    {
+      async listTabs() {
+        return {
+          tabs: [
+            {
+              targetId: "target-current",
+              active: true,
+              title: "Current",
+              url: "https://example.com/current",
+            },
+          ],
+        };
+      },
+    },
+    async () => {
+      const restore = setOverrides({
+        cdpOverride() {
+          cdpCalled = true;
+          return {};
+        },
+      });
+      try {
+        await assert.rejects(
+          () => closeTab("target-stale"),
+          /closeTab target not found.*target-stale.*target-current/,
+        );
+      } finally {
+        restore();
+      }
+    },
+  );
+  assert.equal(cdpCalled, false);
+});
+
+test("closeTab waits for a closed target to disappear from listTabs", async () => {
+  let listCount = 0;
+  let now = 0;
+  const sleeps = [];
+  await withEgo(
+    {
+      async listTabs() {
+        listCount += 1;
+        const scratchStillListed = listCount < 3;
+        return {
+          tabs: [
+            {
+              targetId: "target-current",
+              active: !scratchStillListed,
+              title: "Current",
+              url: "https://example.com/current",
+            },
+            ...(scratchStillListed
+              ? [
+                  {
+                    targetId: "target-scratch",
+                    active: true,
+                    title: "Scratch",
+                    url: "https://example.com/scratch",
+                  },
+                ]
+              : []),
+          ],
+        };
+      },
+    },
+    async () => {
+      const restore = setOverrides({
+        cdpOverride: async () => ({ success: true }),
+        now: () => now,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+          now += ms;
+        },
+      });
+      try {
+        assert.equal(await closeTab("target-scratch"), "target-scratch");
+        assert.deepEqual(sleeps, [50]);
+      } finally {
+        restore();
+      }
+    },
+  );
 });
 
 test("closeTab closes the current tab and invalidates matching session state", async () => {
@@ -295,4 +499,38 @@ test("pageInfo returns pending dialog without evaluating frozen page JavaScript"
       false,
     );
   });
+});
+
+test("pageInfo tolerates a transient document without documentElement", async () => {
+  const restore = setOverrides({
+    cdpOverride: async (method, params) => {
+      assert.equal(method, "Runtime.evaluate");
+      const value = runInNewContext(params.expression, {
+        document: {
+          documentElement: null,
+          title: "Loading",
+        },
+        innerHeight: 600,
+        innerWidth: 800,
+        location: { href: "https://example.com/loading" },
+        scrollX: 0,
+        scrollY: 0,
+      });
+      return { result: { value } };
+    },
+  });
+  try {
+    assert.deepEqual(await pageInfo(), {
+      url: "https://example.com/loading",
+      title: "Loading",
+      w: 800,
+      h: 600,
+      sx: 0,
+      sy: 0,
+      pw: 800,
+      ph: 600,
+    });
+  } finally {
+    restore();
+  }
 });

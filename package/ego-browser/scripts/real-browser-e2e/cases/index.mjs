@@ -24,6 +24,12 @@ import { workflowCases } from "./workflows.mjs";
 import { interactionsCases } from "./interactions.mjs";
 import { canvasCases } from "./canvas.mjs";
 import { downloadCases } from "./downloads.mjs";
+import { playwrightUrlWaitCases } from "./playwright-url-waits.mjs";
+import { playwrightPageUrlCases } from "./playwright-page-url.mjs";
+import { playwrightPageInfoCases } from "./playwright-page-info.mjs";
+import { playwrightLocatorCases } from "./playwright-locators.mjs";
+import { playwrightTargetCases } from "./playwright-targets.mjs";
+import { playwrightPermissionCases } from "./playwright-permissions.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -54,4 +60,10 @@ export const e2eCases = [
   ...downloadCases,
   ...interactionsCases,
   ...canvasCases,
+  ...playwrightUrlWaitCases,
+  ...playwrightPageUrlCases,
+  ...playwrightPageInfoCases,
+  ...playwrightLocatorCases,
+  ...playwrightTargetCases,
+  ...playwrightPermissionCases,
 ];

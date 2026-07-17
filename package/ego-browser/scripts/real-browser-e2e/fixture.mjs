@@ -106,6 +106,35 @@ export async function startFixtureServer(taskName) {
       res.end(`status ${code}`);
       return;
     }
+    if (url.pathname === "/regression/delayed-asset.svg") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      setTimeout(() => {
+        res.writeHead(200, {
+          "content-type": "image/svg+xml",
+          "cache-control": "no-store",
+        });
+        res.end(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#2457ff"/></svg>',
+        );
+      }, delayMs);
+      return;
+    }
+    if (url.pathname === "/regression/slow-load") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      res.writeHead(200, {
+        "content-type": "text/html",
+        "cache-control": "no-store",
+      });
+      res.end(`<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>slow load regression</title></head>
+  <body>
+    <h1>Slow load regression</h1>
+    <img alt="delayed asset" src="/regression/delayed-asset.svg?ms=${delayMs}&nonce=${Date.now()}">
+  </body>
+</html>`);
+      return;
+    }
     if (url.pathname === "/api/bytes") {
       const n = Math.max(0, Number(url.searchParams.get("n") || 0));
       res.writeHead(200, {
@@ -142,6 +171,20 @@ export async function startFixtureServer(taskName) {
       res.end(pageHtml("nav-target"));
       return;
     }
+    if (url.pathname === "/regression/slow-document") {
+      const delayMs = boundedDelay(url.searchParams.get("ms"), 1200);
+      res.writeHead(200, {
+        "content-type": "text/html",
+        "cache-control": "no-store",
+      });
+      res.flushHeaders?.();
+      setTimeout(() => {
+        res.end(
+          "<!doctype html><html><head><title>slow document regression</title></head><body><h1>Ready</h1></body></html>",
+        );
+      }, delayMs);
+      return;
+    }
     if (url.pathname === "/secondary") {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(pageHtml("secondary"));
@@ -176,6 +219,11 @@ export async function startFixtureServer(taskName) {
     server: fixtureServer,
     baseUrl: `http://127.0.0.1:${address.port}`,
   };
+}
+
+function boundedDelay(raw, fallback) {
+  const value = Number(raw ?? fallback);
+  return Number.isFinite(value) ? Math.max(0, Math.min(value, 5000)) : fallback;
 }
 
 function pageHtml(kind) {

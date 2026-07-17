@@ -43,6 +43,26 @@ test("installEgoSdk keeps page.locator chainable while wrapping locator methods"
   }
 });
 
+test("installEgoSdk preserves the asynchronous page.url contract", async () => {
+  const originalLog = console.log;
+  const target = {};
+  try {
+    installEgoSdk(target, {
+      cliLog() {},
+      context: {
+        page: {
+          url: async () => "https://example.com/current",
+        },
+      },
+    });
+    const value = target.page.url();
+    assert.equal(typeof value.then, "function");
+    assert.equal(await value, "https://example.com/current");
+  } finally {
+    console.log = originalLog;
+  }
+});
+
 test("installEgoSdk exposes the site facade under ego.learnings", () => {
   const originalLog = console.log;
   const target = { ego: {} };

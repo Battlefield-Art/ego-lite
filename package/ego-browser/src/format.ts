@@ -71,7 +71,7 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
   },
   "page.url": {
     signature: "page.url() => Promise<string>",
-    description: "Return the current page URL.",
+    description: "Asynchronously return the current page URL.",
     returns: "Promise<string>",
     example: "console.log(await page.url())",
   },
@@ -288,24 +288,27 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
       "await page.waitForFunction(() => document.readyState === 'complete')",
   },
   "page.waitForURL": {
-    signature: "page.waitForURL(url, options?) => Promise<void>",
+    signature: "page.waitForURL(url, options?) => Promise<boolean>",
     description:
-      "Wait until the current URL matches a string, glob, regex, or predicate.",
+      "Wait until the current URL matches a string, glob, regex, or predicate receiving a URL object, then wait for load by default.",
     params: [
       {
         name: "url",
         type: "string | RegExp | Function",
         required: true,
-        description: "URL matcher.",
+        description:
+          "URL matcher. Predicate functions receive a URL object; use url.href, url.pathname, or url.searchParams.",
       },
       {
         name: "options",
-        type: "{ timeout?: number }",
-        description: "Timeout in milliseconds.",
+        type: "{ timeout?: number, waitUntil?: 'load' | 'domcontentloaded' | 'networkidle' | 'commit' }",
+        description:
+          "Timeout in milliseconds and completion state; waitUntil defaults to 'load'.",
       },
     ],
-    returns: "Promise<void>",
-    example: "await page.waitForURL(/docs\\.google\\.com/)",
+    returns: "Promise<boolean>",
+    example:
+      "await page.waitForURL(url => url.pathname === '/done', { timeout: 10000 })",
   },
   "page.waitForRequest": {
     signature:
@@ -578,8 +581,9 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
     example: "console.log(await browser.currentTab())",
   },
   "browser.switchTab": {
-    signature: "browser.switchTab(target) => Promise<object>",
-    description: "Switch to a tab by target id or tab object.",
+    signature: "browser.switchTab(target) => Promise<string>",
+    description:
+      "Refresh the current tab list, validate a target id/tab object, then switch to that tab.",
     params: [
       {
         name: "target",
@@ -588,8 +592,9 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
         description: "Target id or tab object.",
       },
     ],
-    returns: "Promise<object>",
-    example: "await browser.switchTab(targetId)",
+    returns: "Promise<string>",
+    example:
+      "const tab = (await browser.listTabs()).find(t => t.url.includes('/docs')); if (!tab) throw new Error('docs tab not found'); await browser.switchTab(tab.targetId)",
   },
   "browser.openOrReuseTab": {
     signature: "browser.openOrReuseTab(url, options?) => Promise<object>",
@@ -614,7 +619,7 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
   "browser.closeTab": {
     signature: "browser.closeTab(target?) => Promise<string>",
     description:
-      "Close a tab by target id/object, or the current tab when omitted.",
+      "Refresh the current tab list, validate, and close a tab by target id/object, or close the current tab when omitted.",
     params: [
       {
         name: "target",
@@ -922,7 +927,7 @@ const FUNCTION_DOCS: Record<string, FunctionDoc> = {
   cdp: {
     signature: "cdp(method, params?) => Promise<any>",
     description:
-      "Send a raw Chrome DevTools Protocol command to the current target.",
+      "Send a supported raw Chrome DevTools Protocol command to the current target. Browser.grantPermissions and Browser.setPermission are not exposed by the task-space bridge.",
     params: [
       {
         name: "method",
