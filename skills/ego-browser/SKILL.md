@@ -130,7 +130,7 @@ EOF
 - `page.locator(selector)`: chaining and filtering; `first` / `nth` / `last`; click, hover, `dragTo`, form, keyboard, upload, state-read, collection, element-evaluate, screenshot, and wait methods.
 - `browser`: `listTabs`, `currentTab`, `switchTab`, `openOrReuseTab`, `closeTab`, `ensureRealTab`, `iframeTarget`.
 - `taskSpaces`: `list`, `switch`, `new`, `useOrCreate`, `claim`, `complete`, `handOff`, `takeOver`, `waitForAgentControl`.
-- `site`: learned site skills and tools. `fetch.server` performs Node-side requests; `fetch.browser` performs requests in the current page origin. Use `cdp` only as an escape hatch.
+- `fetch.server` performs Node-side requests; `fetch.browser` performs requests in the current page origin. Use `cdp` only as an escape hatch.
 - `console.log` is the output channel. Use `console.log(help('page'))`, `console.log(help('locator'))`, or another `help(name)` call when an exact signature is unclear.
 
 ## Correctness rules
