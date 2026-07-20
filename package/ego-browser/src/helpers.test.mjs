@@ -109,6 +109,9 @@ test("helper surface exposes Playwright-style object facades", () => {
   assert.equal(typeof context.page.waitForURL, "function");
   assert.equal(typeof context.page.waitForRequest, "function");
   assert.equal(typeof context.page.waitForResponse, "function");
+  assert.equal(typeof context.page.screencast, "object");
+  assert.equal(typeof context.page.screencast.start, "function");
+  assert.equal(typeof context.page.screencast.stop, "function");
   assert.equal(typeof context.page.keyboard.press, "function");
   assert.equal(typeof context.page.keyboard.down, "function");
   assert.equal(typeof context.page.keyboard.up, "function");
