@@ -113,15 +113,21 @@ async function execute(code: string, stdout: WritableLike) {
   const names = Object.keys(context);
   const values = Object.values(context);
   const fn = new AsyncFunction(...names, `"use strict";\n${code}`);
+  let thrown;
   try {
     await fn(...values);
   } catch (error) {
-    // The thrown Error surfaces the hard-stop message on its own, so flush as a thrown
-    // completion (drop the buffer, stay silent) and let it propagate.
-    flushSink(stdout, true);
-    throw error;
+    thrown = error;
   }
-  flushSink(stdout, false);
+  try {
+    await helpers.stopScreencast();
+  } catch (error) {
+    thrown ??= error;
+  }
+  // A thrown Error surfaces a hard-stop message on its own, so flush as a thrown
+  // completion (drop the buffer, stay silent) and let it propagate.
+  flushSink(stdout, Boolean(thrown));
+  if (thrown) throw thrown;
 }
 
 export async function executionContext() {

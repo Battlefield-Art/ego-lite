@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { runMain } from "../dist/src/run.js";
+import {
+  __testing as screencastTesting,
+  stopScreencast,
+} from "../dist/src/driver/screencast.js";
 
 // A minimal native ego whose only method reports a hard stop, the same shape the real
 // bindings return when the user holds (or has not handed over) the task space. The
@@ -193,4 +197,41 @@ test("an ordinary uncaught error still flushes the output logged before it", asy
   assert.ok(result.error, "expected runMain to reject");
   assert.equal(result.error.message, "boom");
   assert.equal(result.stdout, "partial result\n");
+});
+
+test("runMain finalizes an active screencast when the script ends", async () => {
+  let stopCalls = 0;
+  const restore = screencastTesting.setOverrides({
+    ensureSession: async () => "session-1",
+    subscribeBrowserEvent: () => () => {},
+    browserCdp: async (method) => {
+      if (method === "Page.captureScreenshot") {
+        return { result: { data: Buffer.from("fallback").toString("base64") } };
+      }
+      return { result: {} };
+    },
+    createRecorder: () => ({
+      async start() {},
+      writeFrame() {},
+      async stop() {
+        stopCalls += 1;
+      },
+    }),
+  });
+  try {
+    const result = await runScript(`
+      await page.screencast.start({
+        path: "/tmp/auto-finalized.webm",
+        size: { width: 640, height: 480 },
+      });
+      console.log("recorded");
+    `);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, "recorded\n");
+    assert.equal(stopCalls, 1);
+  } finally {
+    await stopScreencast().catch(() => {});
+    restore();
+  }
 });

@@ -605,6 +605,7 @@ async function resolveMouseTarget(
 ): Promise<Point> {
   if (typeof target === "string") {
     await waitForSelector(target, { timeout, state: "visible" });
+    await scrollIntoViewIfNeeded(target);
     return elementCenter(target);
   }
   if (Array.isArray(target)) {
@@ -618,9 +619,11 @@ async function resolveMouseTarget(
     ) {
       if (target.x === undefined && target.y === undefined) {
         await waitForSelector(target.selector, { timeout, state: "visible" });
+        await scrollIntoViewIfNeeded(target.selector);
         return elementCenter(target.selector);
       }
       await waitForSelector(target.selector, { timeout, state: "visible" });
+      await scrollIntoViewIfNeeded(target.selector);
       const [topLeft, center] = await Promise.all([
         elementTopLeft(target.selector),
         elementCenter(target.selector),

@@ -30,6 +30,8 @@ import { playwrightPageInfoCases } from "./playwright-page-info.mjs";
 import { playwrightLocatorCases } from "./playwright-locators.mjs";
 import { playwrightTargetCases } from "./playwright-targets.mjs";
 import { playwrightPermissionCases } from "./playwright-permissions.mjs";
+import { damaiRushCase } from "./damai-rush.mjs";
+import { videoRecordingCase } from "./video-recording.mjs";
 
 export const e2eCases = [
   { name: "environment initialization", body: environmentCase },
@@ -55,6 +57,8 @@ export const e2eCases = [
   { name: "fetch helpers", body: fetchHelpersCase },
   { name: "cdp js help", body: cdpJsHelpCase },
   { name: "runtime regression", body: runtimeRegressionCase },
+  { name: "screencast recording", body: videoRecordingCase },
+  { name: "concert ticket rush", body: damaiRushCase },
   ...adversarialCases,
   ...workflowCases,
   ...downloadCases,

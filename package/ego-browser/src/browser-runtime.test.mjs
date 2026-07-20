@@ -240,6 +240,79 @@ test("drainBrowserEvents collects CDP events and clears the buffer", async () =>
   }
 });
 
+test("subscribeBrowserEvent delivers events from the requested session", async () => {
+  const runtime = await import("../dist/src/browser-runtime.js");
+  assert.equal(typeof runtime.subscribeBrowserEvent, "function");
+
+  installAutoEgo();
+  let unsubscribe;
+  try {
+    await browserCdp("Runtime.evaluate", { expression: "1" });
+    const received = [];
+    unsubscribe = runtime.subscribeBrowserEvent(
+      "Page.screencastFrame",
+      "sess-video",
+      (event) => received.push(event.params.data),
+    );
+
+    fireEvent("Page.screencastFrame", { data: "wrong" }, "sess-other");
+    fireEvent("Page.screencastFrame", { data: "frame-1" }, "sess-video");
+
+    assert.deepEqual(received, ["frame-1"]);
+  } finally {
+    unsubscribe?.();
+    cleanup();
+  }
+});
+
+test("subscribeBrowserEvent stops delivery after unsubscribe", async () => {
+  const { subscribeBrowserEvent } =
+    await import("../dist/src/browser-runtime.js");
+  installAutoEgo();
+  try {
+    await browserCdp("Runtime.evaluate", { expression: "1" });
+    const received = [];
+    const unsubscribe = subscribeBrowserEvent(
+      "Page.screencastFrame",
+      "sess-video",
+      (event) => received.push(event.params.data),
+    );
+    unsubscribe();
+
+    fireEvent("Page.screencastFrame", { data: "late-frame" }, "sess-video");
+
+    assert.deepEqual(received, []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("subscribed screencast frames bypass the generic event buffer", async () => {
+  const { subscribeBrowserEvent } =
+    await import("../dist/src/browser-runtime.js");
+  installAutoEgo();
+  let unsubscribe;
+  try {
+    await browserCdp("Runtime.evaluate", { expression: "1" });
+    unsubscribe = subscribeBrowserEvent(
+      "Page.screencastFrame",
+      "sess-video",
+      () => {},
+    );
+
+    fireEvent(
+      "Page.screencastFrame",
+      { data: "large-base64-frame" },
+      "sess-video",
+    );
+
+    assert.deepEqual(drainBrowserEvents(), []);
+  } finally {
+    unsubscribe?.();
+    cleanup();
+  }
+});
+
 test("waitForBrowserEvent resolves future matching events", async () => {
   installAutoEgo();
   try {

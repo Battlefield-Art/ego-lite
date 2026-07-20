@@ -10,10 +10,16 @@ const SESSION_LOST =
   /Session (?:with given id )?not found|Target closed|No session/i;
 const BROWSER_LEVEL = (method) =>
   method.startsWith("Target.") || method.startsWith("Browser.");
+type BrowserEventSubscriber = {
+  method: string;
+  sessionId?: string;
+  listener: (event: any) => void;
+};
 let nextMessageId = 1;
 const pending = new Map();
 const events = [];
 const eventWaiters = [];
+const eventSubscribers = new Set<BrowserEventSubscriber>();
 const pageEnabledSessions = new Set();
 const pendingDialogs = new Map();
 export function isBrowserRuntime() {
@@ -179,6 +185,16 @@ export function waitForBrowserEvent(
   });
 }
 
+export function subscribeBrowserEvent(
+  method: string,
+  sessionId: string | undefined,
+  listener: (event: any) => void,
+) {
+  const subscriber = { method, sessionId, listener };
+  eventSubscribers.add(subscriber);
+  return () => eventSubscribers.delete(subscriber);
+}
+
 export function pendingDialog(sessionId = state.sessionId) {
   if (sessionId && pendingDialogs.has(sessionId)) {
     return { ...pendingDialogs.get(sessionId) };
@@ -258,9 +274,20 @@ function handleMessage(message) {
       pendingDialogs.delete(sessionId);
     }
   }
-  events.push(data);
-  if (events.length > MAX_BUFFERED_EVENTS) {
-    events.splice(0, events.length - MAX_BUFFERED_EVENTS);
+  let deliveredToSubscriber = false;
+  for (const subscriber of eventSubscribers) {
+    if (subscriber.method !== data.method) continue;
+    if (subscriber.sessionId && subscriber.sessionId !== data.sessionId) {
+      continue;
+    }
+    deliveredToSubscriber = true;
+    subscriber.listener(data);
+  }
+  if (!(deliveredToSubscriber && data.method === "Page.screencastFrame")) {
+    events.push(data);
+    if (events.length > MAX_BUFFERED_EVENTS) {
+      events.splice(0, events.length - MAX_BUFFERED_EVENTS);
+    }
   }
   for (const waiter of [...eventWaiters]) {
     let matched = false;

@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { state } from "../state.js";
@@ -41,7 +42,7 @@ type ScreenshotOptions = {
   clip?: ScreenshotClip;
 };
 
-export async function drainEvents() {
+export function drainEvents() {
   return drainBrowserEvents();
 }
 
@@ -132,6 +133,7 @@ export async function screenshot(options: ScreenshotOptions = {}) {
     }
   }
   const result = await cdp("Page.captureScreenshot", params);
+  await mkdir(dirname(path), { recursive: true });
   await state.writeFile(path, Buffer.from(result.data, "base64"));
   return path;
 }
