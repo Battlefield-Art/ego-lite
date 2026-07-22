@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 
+import { createDamaiRushRoutes } from "./damai-rush/fixture-routes.mjs";
+
 export async function closeFixtureServer(fixtureServer) {
   await new Promise((resolve) => {
     const timer = setTimeout(resolve, 1000);
@@ -14,8 +16,10 @@ export async function closeFixtureServer(fixtureServer) {
 }
 
 export async function startFixtureServer(taskName) {
-  const fixtureServer = createServer((req, res) => {
+  const handleDamaiRushRoute = createDamaiRushRoutes();
+  const fixtureServer = createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
+    if (await handleDamaiRushRoute(req, res, url)) return;
     if (url.pathname === "/healthz") {
       res.writeHead(200, {
         "content-type": "application/json",

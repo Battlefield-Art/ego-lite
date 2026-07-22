@@ -87,6 +87,50 @@ test("click resolves selector offsets without the public elementEval helper", as
   );
 });
 
+test("click scrolls a selector into view before resolving its click point", async () => {
+  const calls = [];
+  const restore = setOverrides({
+    cdpOverride(method, params) {
+      calls.push({ method, params });
+      if (
+        method === "Runtime.evaluate" &&
+        params.objectGroup === "ego-browser"
+      ) {
+        return { result: { objectId: "object-1" } };
+      }
+      if (method === "Runtime.evaluate") {
+        return { result: { value: { x: 100, y: 200 } } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        return {
+          result: {
+            value: params.functionDeclaration.includes("checkVisibility")
+              ? true
+              : null,
+          },
+        };
+      }
+      return {};
+    },
+  });
+  try {
+    await click("#target");
+  } finally {
+    restore();
+  }
+
+  const scrollIndex = calls.findIndex(
+    (call) =>
+      call.method === "Runtime.callFunctionOn" &&
+      call.params.functionDeclaration.includes("scrollIntoView"),
+  );
+  const dispatchIndex = calls.findIndex(
+    (call) => call.method === "Input.dispatchMouseEvent",
+  );
+  assert.ok(scrollIndex >= 0, "scrolls the target into the viewport");
+  assert.ok(scrollIndex < dispatchIndex, "scrolls before mouse dispatch");
+});
+
 test("wheel defaults to scrolling down (positive deltaY) via CDP when visible and focused", async () => {
   // CDP negates wheel deltas internally, so the DOM convention (positive = down)
   // applies end to end — matching Playwright's mouse.wheel(deltaX, deltaY).
@@ -244,8 +288,14 @@ test("click triggers probe fallback when CDP click is not trusted", async () => 
           // finishClickProbe — simulate CDP click was NOT seen
           return { result: { value: { seen: false, fallback: true } } };
         }
+        if (params.objectGroup === "ego-browser") {
+          return { result: { objectId: "object-1" } };
+        }
         // Element resolution (buildSelectorCenterJs) — return center point
         return { result: { value: { x: 100, y: 200 } } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        return { result: { value: true } };
       }
       // Input.dispatchMouseEvent calls proceed normally
       return {};
@@ -298,8 +348,14 @@ test("click absorbs CDP timeout when probe fallback succeeds", async () => {
           // Fallback succeeded
           return { result: { value: { seen: false, fallback: true } } };
         }
+        if (params.objectGroup === "ego-browser") {
+          return { result: { objectId: "object-1" } };
+        }
         // Element resolution (buildSelectorCenterJs) — return center point
         return { result: { value: { x: 100, y: 200 } } };
+      }
+      if (method === "Runtime.callFunctionOn") {
+        return { result: { value: true } };
       }
       if (method === "Input.dispatchMouseEvent") {
         // Simulate CDP timeout — the browser couldn't dispatch the event

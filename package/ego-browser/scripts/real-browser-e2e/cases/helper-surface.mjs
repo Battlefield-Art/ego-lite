@@ -14,6 +14,9 @@ export function helperSurfaceCase() {
     assertEqual(typeof page.setDefaultTimeout, "function", "page.setDefaultTimeout is installed");
     assertEqual(typeof page.waitForEvent, "function", "page.waitForEvent is installed");
     assertEqual(typeof page.waitForURL, "function", "page.waitForURL is installed");
+    assertEqual(typeof page.screencast, "object", "page.screencast is installed");
+    assertEqual(typeof page.screencast.start, "function", "page.screencast.start is installed");
+    assertEqual(typeof page.screencast.stop, "function", "page.screencast.stop is installed");
     assertEqual(typeof page.keyboard.press, "function", "page.keyboard.press is installed");
     assertEqual(typeof page.mouse.click, "function", "page.mouse.click is installed");
     const loc = page.locator("#click-button");

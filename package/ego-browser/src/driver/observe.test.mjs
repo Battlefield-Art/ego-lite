@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   browserCdp,
   invalidateSession,
 } from "../../dist/src/browser-runtime.js";
-import { screenshot } from "../../dist/src/driver/observe.js";
+import { drainEvents, screenshot } from "../../dist/src/driver/observe.js";
 import { setOverrides } from "../../dist/src/state.js";
 
 function withCdpRuntime(fn) {
@@ -96,4 +99,19 @@ test("screenshot skips page metric JavaScript while a native dialog is pending",
 
   assert.equal(writes.length, 1);
   assert.equal(writes[0].path, "/tmp/ego-browser-dialog-shot.png");
+});
+
+test("screenshot creates a missing parent directory", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "ego-browser-observe-"));
+  const path = join(tempDir, "nested", "shot.png");
+  try {
+    await withCdpRuntime(() => screenshot({ path, raw: true }));
+    assert.equal((await readFile(path)).toString(), "png");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("drainEvents returns the current event array synchronously", () => {
+  assert.ok(Array.isArray(drainEvents()));
 });

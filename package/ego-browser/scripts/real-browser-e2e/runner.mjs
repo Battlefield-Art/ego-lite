@@ -305,6 +305,15 @@ async function initializeE2eEnvironment(context, tempDir) {
       `fixture health payload mismatch: ${JSON.stringify(health)}`,
     );
   }
+  const ticketPageResponse = await fetch(`${baseUrl}/e2e/damai-rush/`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  const ticketPage = await ticketPageResponse.text();
+  if (!ticketPageResponse.ok || !ticketPage.includes("EGO STARLIGHT TOUR")) {
+    throw new Error(
+      `shared ticket fixture check failed: HTTP ${ticketPageResponse.status}`,
+    );
+  }
   await stat(uploadPath);
   await stat(uploadPathTwo);
   await stat(artifactDir);
