@@ -125,6 +125,17 @@ Tutorials, the full tool reference, and integration guides live at [lite.ego.app
 - [GitHub Discussions](https://github.com/citrolabs/ego-lite/discussions), ideas and longer threads
 - [X/Twitter](https://x.com/ego_agent), updates and releases
 
+## Star History
+
+<a href="https://github.com/citrolabs/ego-lite/stargazers">
+<!-- star-history:start -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/star-history/star-history-dark.svg">
+  <img alt="Star history" src="assets/star-history/star-history-light.svg">
+</picture>
+<!-- star-history:end -->
+</a>
+
 ## License
 
 The contents of this repository are released under the [MIT License](LICENSE). The ego lite browser is a separate, free download.
